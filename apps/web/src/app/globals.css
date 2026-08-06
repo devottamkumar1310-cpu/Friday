@@ -1,0 +1,6 @@
+/* Design tokens live in @friday/ui and are the single source for both themes. */
+@import '@friday/ui/styles.css';
+
+/* Workspace packages ship TypeScript source, so Tailwind must scan them too or
+   their utility classes are tree-shaken out of the production build. */
+@source '../../../../packages/ui/src';

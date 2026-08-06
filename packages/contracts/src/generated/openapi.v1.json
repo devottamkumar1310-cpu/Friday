@@ -1,0 +1,3830 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "FRIDAY API",
+    "version": "v1",
+    "description": "FRIDAY — an AI Learning Operating System.\n\nClients must ignore unknown response fields and must not exhaustively switch on response enums without a default branch. That contract is what makes additive evolution non-breaking (API_SPECIFICATION §7.2)."
+  },
+  "servers": [
+    {
+      "url": "/api/v1",
+      "description": "Same-origin"
+    },
+    {
+      "url": "https://api.friday.app/api/v1",
+      "description": "Production"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Auth",
+      "description": "Sign-up, sign-in, sessions"
+    },
+    {
+      "name": "Me",
+      "description": "Profile, preferences, consents"
+    },
+    {
+      "name": "Goals",
+      "description": "Learning goals"
+    },
+    {
+      "name": "Curriculum",
+      "description": "The knowledge graph — concepts and prerequisites"
+    },
+    {
+      "name": "Planning",
+      "description": "Plan versions, schedule, feasibility"
+    },
+    {
+      "name": "NextAction",
+      "description": "The deterministic priority engine, on the hot path"
+    },
+    {
+      "name": "Execution",
+      "description": "Sessions and evidence"
+    },
+    {
+      "name": "MissionControl",
+      "description": "Today's Mission, Next Action, Progress, Risks"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "friday_session",
+        "description": "Opaque session token. The server stores only a hash, so the raw value is never recoverable from the database."
+      }
+    },
+    "schemas": {
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 254,
+            "format": "email",
+            "example": "student@example.com"
+          },
+          "emailVerified": {
+            "type": "boolean"
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "example": "Aarav"
+          },
+          "avatarUrl": {
+            "type": ["string", "null"],
+            "format": "uri"
+          },
+          "timezone": {
+            "type": "string",
+            "example": "Asia/Kolkata"
+          },
+          "locale": {
+            "type": "string",
+            "pattern": "^[a-z]{2}(-[A-Z]{2})?$",
+            "example": "en"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["learner", "admin", "system"]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-24T09:30:00Z"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "emailVerified",
+          "displayName",
+          "avatarUrl",
+          "timezone",
+          "locale",
+          "role",
+          "createdAt"
+        ]
+      },
+      "SignUpPayload": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/User"
+          },
+          "requiresVerification": {
+            "type": "boolean"
+          }
+        },
+        "required": ["user", "requiresVerification"]
+      },
+      "ResponseMeta": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-24T09:30:00Z"
+          },
+          "degraded": {
+            "type": "boolean"
+          }
+        },
+        "required": ["requestId", "timestamp"]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "INVALID_CREDENTIALS",
+                  "EMAIL_NOT_VERIFIED",
+                  "SESSION_EXPIRED",
+                  "EMAIL_IN_USE",
+                  "WEAK_PASSWORD",
+                  "OAUTH_FAILED",
+                  "MINOR_CONSENT_REQUIRED",
+                  "UNDER_MINIMUM_AGE",
+                  "DATE_OF_BIRTH_REQUIRED",
+                  "VALIDATION_FAILED",
+                  "UNKNOWN_FIELD",
+                  "INVALID_DATE_RANGE",
+                  "NOT_FOUND",
+                  "ALREADY_EXISTS",
+                  "CONFLICT",
+                  "FORBIDDEN",
+                  "GOAL_LIMIT_REACHED",
+                  "TARGET_DATE_IN_PAST",
+                  "GOAL_NOT_ACTIVE",
+                  "CURRICULUM_GENERATION_FAILED",
+                  "PREREQUISITE_CYCLE",
+                  "TEMPLATE_NOT_FOUND",
+                  "CURRICULUM_VALIDATION_FAILED",
+                  "PLAN_NOT_FEASIBLE",
+                  "NO_AVAILABILITY_DEFINED",
+                  "PLAN_GENERATION_FAILED",
+                  "REPLAN_IN_PROGRESS",
+                  "SESSION_ALREADY_ACTIVE",
+                  "SESSION_NOT_ACTIVE",
+                  "TASK_ALREADY_COMPLETED",
+                  "NO_QUESTIONS_AVAILABLE",
+                  "ATTEMPT_ALREADY_SUBMITTED",
+                  "GRADING_FAILED",
+                  "AI_UNAVAILABLE",
+                  "AI_BUDGET_EXCEEDED",
+                  "AI_VALIDATION_FAILED",
+                  "AI_TIMEOUT",
+                  "CONTEXT_TOO_LARGE",
+                  "RATE_LIMITED",
+                  "IDEMPOTENCY_CONFLICT",
+                  "INTERNAL_ERROR",
+                  "SERVICE_UNAVAILABLE"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string"
+                    },
+                    "issue": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["issue"]
+                }
+              },
+              "requestId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "docsUrl": {
+                "type": "string",
+                "format": "uri"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            },
+            "required": ["code", "message", "requestId", "docsUrl", "retryable"]
+          }
+        },
+        "required": ["error"]
+      },
+      "SignUpRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 254,
+            "format": "email",
+            "example": "student@example.com"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 200,
+            "description": "Minimum 10 characters"
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "example": "Aarav"
+          },
+          "timezone": {
+            "type": "string",
+            "example": "Asia/Kolkata"
+          },
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2007-05-14"
+          }
+        },
+        "required": ["email", "password", "displayName", "timezone", "dateOfBirth"],
+        "additionalProperties": false
+      },
+      "SignInPayload": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/User"
+          }
+        },
+        "required": ["user"]
+      },
+      "SignInRequest": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 254,
+            "format": "email",
+            "example": "student@example.com"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": ["email", "password"],
+        "additionalProperties": false
+      },
+      "OnboardingState": {
+        "type": "object",
+        "properties": {
+          "step": {
+            "type": "string",
+            "enum": [
+              "date_of_birth",
+              "guardian_consent",
+              "goal",
+              "availability",
+              "curriculum",
+              "complete"
+            ]
+          },
+          "completed": {
+            "type": "boolean"
+          },
+          "blockedBy": {
+            "type": ["string", "null"],
+            "enum": ["date_of_birth", "guardian_consent"]
+          }
+        },
+        "required": ["step", "completed", "blockedBy"]
+      },
+      "MePayload": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/User"
+          },
+          "onboarding": {
+            "$ref": "#/components/schemas/OnboardingState"
+          },
+          "activeGoal": {
+            "type": "null"
+          }
+        },
+        "required": ["user", "onboarding", "activeGoal"]
+      },
+      "UpdateMeRequest": {
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "example": "Aarav"
+          },
+          "timezone": {
+            "type": "string",
+            "example": "Asia/Kolkata"
+          },
+          "locale": {
+            "type": "string",
+            "pattern": "^[a-z]{2}(-[A-Z]{2})?$",
+            "example": "en"
+          },
+          "avatarUrl": {
+            "type": ["string", "null"],
+            "format": "uri"
+          },
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2007-05-14"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Consent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "consentType": {
+            "type": "string",
+            "enum": ["terms", "privacy", "guardian", "marketing"]
+          },
+          "granted": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-24T09:30:00Z"
+          }
+        },
+        "required": ["id", "consentType", "granted", "version", "createdAt"]
+      },
+      "RecordConsentRequest": {
+        "type": "object",
+        "properties": {
+          "consentType": {
+            "type": "string",
+            "enum": ["terms", "privacy", "guardian", "marketing"]
+          },
+          "granted": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "guardianEmail": {
+            "type": "string",
+            "maxLength": 254,
+            "format": "email",
+            "example": "student@example.com"
+          }
+        },
+        "required": ["consentType", "granted", "version"],
+        "additionalProperties": false
+      },
+      "CurriculumTemplate": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "examBoard": {
+            "type": ["string", "null"]
+          },
+          "region": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["id", "slug", "title", "examBoard", "region"]
+      },
+      "Goal": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["exam", "skill", "course", "custom"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["draft", "active", "paused", "completed", "abandoned"]
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2007-05-14"
+          },
+          "targetDate": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2007-05-14"
+          },
+          "targetWeeklyMinutes": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-24T09:30:00Z"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "type",
+          "status",
+          "startDate",
+          "targetDate",
+          "targetWeeklyMinutes",
+          "createdAt"
+        ]
+      },
+      "CreateGoalRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "type": {
+            "type": "string",
+            "enum": ["exam", "skill", "course", "custom"]
+          },
+          "targetDate": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2007-05-14"
+          },
+          "targetWeeklyMinutes": {
+            "type": "integer",
+            "minimum": 30,
+            "maximum": 10080,
+            "default": 600
+          },
+          "selfReportedLevel": {
+            "type": "string",
+            "enum": ["beginner", "intermediate", "advanced"]
+          },
+          "templateSlug": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["title", "type", "targetDate", "templateSlug"],
+        "additionalProperties": false
+      },
+      "Concept": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_started",
+              "in_progress",
+              "learned",
+              "mastered",
+              "excluded",
+              "already_known"
+            ]
+          },
+          "examWeight": {
+            "type": "number"
+          },
+          "estimatedMinutes": {
+            "type": "integer"
+          },
+          "mastery": {
+            "type": ["number", "null"],
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "required": ["id", "title", "status", "examWeight", "estimatedMinutes", "mastery"]
+      },
+      "ConceptEdge": {
+        "type": "object",
+        "properties": {
+          "fromConceptId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "toConceptId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["prerequisite_of", "related_to", "applies_to", "specializes"]
+          },
+          "strength": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
+        "required": ["fromConceptId", "toConceptId", "type", "strength"]
+      },
+      "UpdateConceptStatusRequest": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_started",
+              "in_progress",
+              "learned",
+              "mastered",
+              "excluded",
+              "already_known"
+            ]
+          }
+        },
+        "required": ["status"],
+        "additionalProperties": false
+      },
+      "Plan": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "superseded", "archived"]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "windowStart": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2007-05-14"
+          },
+          "windowEnd": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2007-05-14"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": ["on_track", "at_risk", "not_feasible"]
+          },
+          "requiredMinutes": {
+            "type": "integer"
+          },
+          "availableMinutes": {
+            "type": "integer"
+          },
+          "slackMinutes": {
+            "type": "integer"
+          },
+          "projectedCompletionDate": {
+            "type": ["string", "null"],
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2007-05-14"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-24T09:30:00Z"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "status",
+          "reason",
+          "windowStart",
+          "windowEnd",
+          "verdict",
+          "requiredMinutes",
+          "availableMinutes",
+          "slackMinutes",
+          "projectedCompletionDate",
+          "createdAt"
+        ]
+      },
+      "RegeneratePlanRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "additionalProperties": false
+      },
+      "Task": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["learn", "practice", "revise", "assess", "project", "break"]
+          },
+          "title": {
+            "type": "string"
+          },
+          "estimatedMinutes": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "in_progress", "completed", "skipped", "rescheduled", "cancelled"]
+          },
+          "scheduledDate": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2007-05-14"
+          },
+          "concepts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "UUIDv7 identifier",
+                  "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": ["id", "title"]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "title",
+          "estimatedMinutes",
+          "status",
+          "scheduledDate",
+          "concepts"
+        ]
+      },
+      "StudyBlock": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "startTime": {
+            "type": ["string", "null"]
+          },
+          "endTime": {
+            "type": ["string", "null"]
+          },
+          "plannedMinutes": {
+            "type": "integer"
+          },
+          "isLocked": {
+            "type": "boolean"
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Task"
+            }
+          }
+        },
+        "required": ["id", "startTime", "endTime", "plannedMinutes", "isLocked", "tasks"]
+      },
+      "WhyBlock": {
+        "type": ["object", "null"],
+        "properties": {
+          "priorityScore": {
+            "type": "number"
+          },
+          "factors": {
+            "type": "object",
+            "properties": {
+              "impact": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "number"
+                  },
+                  "contribution": {
+                    "type": ["number", "null"]
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": ["value", "contribution", "detail"]
+              },
+              "urgency": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "number"
+                  },
+                  "contribution": {
+                    "type": ["number", "null"]
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": ["value", "contribution", "detail"]
+              },
+              "decayRisk": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "number"
+                  },
+                  "contribution": {
+                    "type": ["number", "null"]
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": ["value", "contribution", "detail"]
+              },
+              "readiness": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "number"
+                  },
+                  "contribution": {
+                    "type": ["number", "null"]
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": ["value", "contribution", "detail"]
+              },
+              "cost": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "number"
+                  },
+                  "contribution": {
+                    "type": ["number", "null"]
+                  },
+                  "detail": {
+                    "type": "string"
+                  }
+                },
+                "required": ["value", "contribution", "detail"]
+              }
+            },
+            "required": ["impact", "urgency", "decayRisk", "readiness", "cost"]
+          },
+          "dominantFactor": {
+            "type": "string",
+            "enum": ["impact", "urgency", "decayRisk", "readiness", "cost"]
+          },
+          "confidence": {
+            "type": "object",
+            "properties": {
+              "score": {
+                "type": "number"
+              },
+              "band": {
+                "type": "string",
+                "enum": ["exploratory", "low", "moderate", "high"]
+              }
+            },
+            "required": ["score", "band"]
+          }
+        },
+        "required": ["priorityScore", "factors", "dominantFactor", "confidence"]
+      },
+      "SkipActionRequest": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": ["taskId"],
+        "additionalProperties": false
+      },
+      "TodaysMission": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2007-05-14"
+          },
+          "capacityMinutes": {
+            "type": "integer"
+          },
+          "plannedMinutes": {
+            "type": "integer"
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Task"
+            }
+          }
+        },
+        "required": ["date", "capacityMinutes", "plannedMinutes", "tasks"]
+      },
+      "ProgressSummary": {
+        "type": "object",
+        "properties": {
+          "weightedProgress": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "conceptsMastered": {
+            "type": "integer"
+          },
+          "conceptsTotal": {
+            "type": "integer"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": ["on_track", "at_risk", "not_feasible"]
+          },
+          "projectedCompletionDate": {
+            "type": ["string", "null"],
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "example": "2007-05-14"
+          },
+          "daysRemaining": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "weightedProgress",
+          "conceptsMastered",
+          "conceptsTotal",
+          "verdict",
+          "projectedCompletionDate",
+          "daysRemaining"
+        ]
+      },
+      "Risk": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["low", "medium", "high"]
+          },
+          "title": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "conceptIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUIDv7 identifier",
+              "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+            },
+            "default": []
+          }
+        },
+        "required": ["id", "severity", "title", "detail"]
+      },
+      "Session": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "goalId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "taskId": {
+            "type": ["string", "null"],
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "paused", "completed", "abandoned"]
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-24T09:30:00Z"
+          },
+          "endedAt": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "example": "2026-07-24T09:30:00Z"
+          },
+          "activeMinutes": {
+            "type": "integer"
+          }
+        },
+        "required": ["id", "goalId", "taskId", "status", "startedAt", "endedAt", "activeMinutes"]
+      },
+      "StartSessionRequest": {
+        "type": "object",
+        "properties": {
+          "goalId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "taskId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "originatedFrom": {
+            "type": "string",
+            "enum": ["recommendation", "plan", "manual", "directive"],
+            "default": "manual"
+          }
+        },
+        "required": ["goalId"],
+        "additionalProperties": false
+      },
+      "CompleteSessionRequest": {
+        "type": "object",
+        "properties": {
+          "activeMinutes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1440
+          },
+          "ratings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "conceptId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "UUIDv7 identifier",
+                  "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                },
+                "rating": {
+                  "type": "string",
+                  "enum": ["again", "hard", "good", "easy"]
+                },
+                "confidence": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              },
+              "required": ["conceptId", "rating"]
+            },
+            "minItems": 1
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": ["activeMinutes", "ratings"],
+        "additionalProperties": false
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {
+    "/auth/sign-up": {
+      "post": {
+        "summary": "Create an account",
+        "tags": ["Auth"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignUpRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SignUpPayload"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/sign-in": {
+      "post": {
+        "summary": "Sign in with email and password",
+        "tags": ["Auth"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignInRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SignInPayload"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/sign-out": {
+      "post": {
+        "summary": "Revoke the current session",
+        "tags": ["Auth"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "signedOut": {
+                          "type": "boolean",
+                          "enum": [true]
+                        }
+                      },
+                      "required": ["signedOut"]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me": {
+      "get": {
+        "summary": "Current user, onboarding state, and active goal summary",
+        "tags": ["Me"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/MePayload"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update profile fields",
+        "tags": ["Me"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/MePayload"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/consents": {
+      "post": {
+        "summary": "Record a consent grant",
+        "tags": ["Me"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordConsentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Consent"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/curriculum/templates": {
+      "get": {
+        "summary": "List published curriculum templates",
+        "tags": ["Curriculum"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CurriculumTemplate"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/goals": {
+      "post": {
+        "summary": "Create a goal from a curated template and generate the initial plan",
+        "tags": ["Goals"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGoalRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "goal": {
+                          "$ref": "#/components/schemas/Goal"
+                        },
+                        "curriculum": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "description": "UUIDv7 identifier",
+                              "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                            },
+                            "totalConcepts": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": ["id", "totalConcepts"]
+                        }
+                      },
+                      "required": ["goal", "curriculum"]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List goals for the current user",
+        "tags": ["Goals"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Goal"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/goals/{goalId}": {
+      "get": {
+        "summary": "Goal detail",
+        "tags": ["Goals"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Goal"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/goals/{goalId}/feasibility": {
+      "get": {
+        "summary": "Current feasibility verdict and arithmetic",
+        "tags": ["Goals"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "verdict": {
+                          "type": "string",
+                          "enum": ["on_track", "at_risk", "not_feasible"]
+                        },
+                        "requiredMinutes": {
+                          "type": "integer"
+                        },
+                        "availableMinutes": {
+                          "type": "integer"
+                        },
+                        "slackMinutes": {
+                          "type": "integer"
+                        },
+                        "slackPercent": {
+                          "type": "number"
+                        },
+                        "projectedCompletionDate": {
+                          "type": ["string", "null"],
+                          "format": "date",
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                          "example": "2007-05-14"
+                        },
+                        "confidenceIntervalDays": {
+                          "type": "integer"
+                        },
+                        "remediationOptions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": ["increase_hours", "reduce_scope", "extend_deadline"]
+                              },
+                              "detail": {
+                                "type": "string"
+                              },
+                              "conceptIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "description": "UUIDv7 identifier",
+                                  "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                                }
+                              },
+                              "impact": {
+                                "type": "object",
+                                "properties": {
+                                  "verdict": {
+                                    "type": "string",
+                                    "enum": ["on_track", "at_risk", "not_feasible"]
+                                  },
+                                  "slackPercent": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": ["verdict"]
+                              }
+                            },
+                            "required": ["type", "detail", "impact"]
+                          }
+                        }
+                      },
+                      "required": [
+                        "verdict",
+                        "requiredMinutes",
+                        "availableMinutes",
+                        "slackMinutes",
+                        "slackPercent",
+                        "projectedCompletionDate",
+                        "confidenceIntervalDays",
+                        "remediationOptions"
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/goals/{goalId}/graph": {
+      "get": {
+        "summary": "Knowledge graph — nodes, edges, mastery",
+        "tags": ["Curriculum"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "nodes": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Concept"
+                          }
+                        },
+                        "edges": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ConceptEdge"
+                          }
+                        }
+                      },
+                      "required": ["nodes", "edges"]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/concepts/{conceptId}": {
+      "patch": {
+        "summary": "Mark a concept excluded / already_known / status change",
+        "tags": ["Curriculum"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateConceptStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Concept"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/goals/{goalId}/plans": {
+      "get": {
+        "summary": "Plan version history",
+        "tags": ["Planning"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Plan"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/goals/{goalId}/plans/current": {
+      "get": {
+        "summary": "The active plan",
+        "tags": ["Planning"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Plan"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/goals/{goalId}/plans/regenerate": {
+      "post": {
+        "summary": "Manually trigger a re-plan (M0: manual trigger only)",
+        "tags": ["Planning"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegeneratePlanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "committed": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string"
+                        },
+                        "plan": {
+                          "allOf": [
+                            {
+                              "$ref": "#/components/schemas/Plan"
+                            },
+                            {
+                              "type": ["object", "null"]
+                            }
+                          ]
+                        },
+                        "drift": {
+                          "type": "object",
+                          "properties": {
+                            "drift": {
+                              "type": "number"
+                            },
+                            "verdictChanged": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": ["drift", "verdictChanged"]
+                        }
+                      },
+                      "required": ["committed", "reason", "plan", "drift"]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/goals/{goalId}/schedule": {
+      "get": {
+        "summary": "Blocks + tasks in the plan's materialised window, plus the projection beyond it",
+        "tags": ["Planning"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "planVersion": {
+                          "type": "integer"
+                        },
+                        "window": {
+                          "type": "object",
+                          "properties": {
+                            "start": {
+                              "type": "string",
+                              "format": "date",
+                              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                              "example": "2007-05-14"
+                            },
+                            "end": {
+                              "type": "string",
+                              "format": "date",
+                              "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                              "example": "2007-05-14"
+                            }
+                          },
+                          "required": ["start", "end"]
+                        },
+                        "days": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "date": {
+                                "type": "string",
+                                "format": "date",
+                                "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                                "example": "2007-05-14"
+                              },
+                              "capacityMinutes": {
+                                "type": "integer"
+                              },
+                              "plannedMinutes": {
+                                "type": "integer"
+                              },
+                              "blocks": {
+                                "type": "array",
+                                "items": {
+                                  "$ref": "#/components/schemas/StudyBlock"
+                                }
+                              }
+                            },
+                            "required": ["date", "capacityMinutes", "plannedMinutes", "blocks"]
+                          }
+                        },
+                        "projection": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "week": {
+                                "type": "string"
+                              },
+                              "conceptIds": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "description": "UUIDv7 identifier",
+                                  "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                                }
+                              },
+                              "plannedMinutes": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": ["week", "conceptIds", "plannedMinutes"]
+                          }
+                        }
+                      },
+                      "required": ["planVersion", "window", "days", "projection"]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/goals/{goalId}/next-action": {
+      "get": {
+        "summary": "The single next recommendation — the hot path (NFR-1.7, no LLM)",
+        "tags": ["NextAction"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "action": {
+                          "type": ["object", "null"],
+                          "properties": {
+                            "taskId": {
+                              "type": "string",
+                              "format": "uuid",
+                              "description": "UUIDv7 identifier",
+                              "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                            },
+                            "type": {
+                              "type": "string",
+                              "enum": ["learn", "practice", "revise", "assess", "project", "break"]
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "estimatedMinutes": {
+                              "type": "integer"
+                            },
+                            "concepts": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "description": "UUIDv7 identifier",
+                                    "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "mastery": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "maximum": 1
+                                  }
+                                },
+                                "required": ["id", "title", "mastery"]
+                              }
+                            },
+                            "rationale": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "taskId",
+                            "type",
+                            "title",
+                            "estimatedMinutes",
+                            "concepts",
+                            "rationale"
+                          ]
+                        },
+                        "why": {
+                          "$ref": "#/components/schemas/WhyBlock"
+                        },
+                        "alternates": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "taskId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "UUIDv7 identifier",
+                                "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "estimatedMinutes": {
+                                "type": "integer"
+                              },
+                              "priorityScore": {
+                                "type": "number"
+                              }
+                            },
+                            "required": ["taskId", "title", "estimatedMinutes", "priorityScore"]
+                          }
+                        },
+                        "computedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "example": "2026-07-24T09:30:00Z"
+                        },
+                        "cacheHit": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["action", "why", "alternates", "computedAt", "cacheHit"]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/goals/{goalId}/next-action/skip": {
+      "post": {
+        "summary": "Record a skip and return the next candidate",
+        "tags": ["NextAction"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SkipActionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "action": {
+                          "type": ["object", "null"],
+                          "properties": {
+                            "taskId": {
+                              "type": "string",
+                              "format": "uuid",
+                              "description": "UUIDv7 identifier",
+                              "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                            },
+                            "type": {
+                              "type": "string",
+                              "enum": ["learn", "practice", "revise", "assess", "project", "break"]
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "estimatedMinutes": {
+                              "type": "integer"
+                            },
+                            "concepts": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "description": "UUIDv7 identifier",
+                                    "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "mastery": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "maximum": 1
+                                  }
+                                },
+                                "required": ["id", "title", "mastery"]
+                              }
+                            },
+                            "rationale": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "taskId",
+                            "type",
+                            "title",
+                            "estimatedMinutes",
+                            "concepts",
+                            "rationale"
+                          ]
+                        },
+                        "why": {
+                          "$ref": "#/components/schemas/WhyBlock"
+                        },
+                        "alternates": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "taskId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "UUIDv7 identifier",
+                                "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "estimatedMinutes": {
+                                "type": "integer"
+                              },
+                              "priorityScore": {
+                                "type": "number"
+                              }
+                            },
+                            "required": ["taskId", "title", "estimatedMinutes", "priorityScore"]
+                          }
+                        },
+                        "computedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "example": "2026-07-24T09:30:00Z"
+                        },
+                        "cacheHit": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["action", "why", "alternates", "computedAt", "cacheHit"]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/goals/{goalId}/mission-control": {
+      "get": {
+        "summary": "Today's Mission, Next Action, Progress, Risks, and rationale in one response",
+        "tags": ["MissionControl"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "goalId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "UUIDv7 identifier",
+                          "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                        },
+                        "today": {
+                          "$ref": "#/components/schemas/TodaysMission"
+                        },
+                        "nextAction": {
+                          "type": "object",
+                          "properties": {
+                            "action": {
+                              "type": ["object", "null"],
+                              "properties": {
+                                "taskId": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "description": "UUIDv7 identifier",
+                                  "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "enum": [
+                                    "learn",
+                                    "practice",
+                                    "revise",
+                                    "assess",
+                                    "project",
+                                    "break"
+                                  ]
+                                },
+                                "title": {
+                                  "type": "string"
+                                },
+                                "estimatedMinutes": {
+                                  "type": "integer"
+                                },
+                                "concepts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "description": "UUIDv7 identifier",
+                                        "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                                      },
+                                      "title": {
+                                        "type": "string"
+                                      },
+                                      "mastery": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 1
+                                      }
+                                    },
+                                    "required": ["id", "title", "mastery"]
+                                  }
+                                },
+                                "rationale": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "taskId",
+                                "type",
+                                "title",
+                                "estimatedMinutes",
+                                "concepts",
+                                "rationale"
+                              ]
+                            },
+                            "why": {
+                              "$ref": "#/components/schemas/WhyBlock"
+                            },
+                            "alternates": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "taskId": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "description": "UUIDv7 identifier",
+                                    "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "estimatedMinutes": {
+                                    "type": "integer"
+                                  },
+                                  "priorityScore": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": ["taskId", "title", "estimatedMinutes", "priorityScore"]
+                              }
+                            },
+                            "computedAt": {
+                              "type": "string",
+                              "format": "date-time",
+                              "example": "2026-07-24T09:30:00Z"
+                            },
+                            "cacheHit": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": ["action", "why", "alternates", "computedAt", "cacheHit"]
+                        },
+                        "progress": {
+                          "$ref": "#/components/schemas/ProgressSummary"
+                        },
+                        "risks": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/Risk"
+                          }
+                        },
+                        "computedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "example": "2026-07-24T09:30:00Z"
+                        }
+                      },
+                      "required": [
+                        "goalId",
+                        "today",
+                        "nextAction",
+                        "progress",
+                        "risks",
+                        "computedAt"
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions": {
+      "post": {
+        "summary": "Start a study session",
+        "tags": ["Execution"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartSessionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Session"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sessions/{sessionId}/complete": {
+      "post": {
+        "summary": "Complete a session: evidence -> mastery + retention update, in one transaction",
+        "tags": ["Execution"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteSessionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "session": {
+                          "$ref": "#/components/schemas/Session"
+                        },
+                        "changes": {
+                          "type": "object",
+                          "properties": {
+                            "mastery": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "conceptId": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "description": "UUIDv7 identifier",
+                                    "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                                  },
+                                  "before": {
+                                    "type": "number"
+                                  },
+                                  "after": {
+                                    "type": "number"
+                                  },
+                                  "delta": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": ["conceptId", "before", "after", "delta"]
+                              }
+                            },
+                            "retention": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "conceptId": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "description": "UUIDv7 identifier",
+                                    "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                                  },
+                                  "previousDue": {
+                                    "type": ["string", "null"],
+                                    "format": "date-time",
+                                    "example": "2026-07-24T09:30:00Z"
+                                  },
+                                  "nextDue": {
+                                    "type": "string",
+                                    "format": "date-time",
+                                    "example": "2026-07-24T09:30:00Z"
+                                  },
+                                  "intervalDays": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": ["conceptId", "previousDue", "nextDue", "intervalDays"]
+                              }
+                            }
+                          },
+                          "required": ["mastery", "retention"]
+                        },
+                        "nextActionInvalidated": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["session", "changes", "nextActionInvalidated"]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {}
+}

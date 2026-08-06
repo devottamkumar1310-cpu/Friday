@@ -1,0 +1,130 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Build-time only. Real secrets live in the environment, never in the repo.
+  AUTH_SECRET: ci-placeholder-secret-at-least-32-chars-long
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  verify:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Lint
+        # Includes the dependency-boundary rules (SYSTEM_ARCHITECTURE §9).
+        # A violation fails the build rather than waiting for review to catch it.
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: OpenAPI spec is current
+        # API_SPECIFICATION §7.4: the published spec is generated from the Zod
+        # schemas, so it cannot be allowed to drift from them.
+        run: |
+          pnpm --filter @friday/contracts generate
+          if ! git diff --quiet -- packages/contracts/src/generated; then
+            echo "::error::openapi.v1.json is stale. Run 'pnpm --filter @friday/contracts generate' and commit the result."
+            git diff --stat -- packages/contracts/src/generated
+            exit 1
+          fi
+
+  migrations:
+    name: Migrations apply cleanly
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        # Stock PostgreSQL: every migration through Phase 2 needs only bundled
+        # contrib extensions (DATABASE_DESIGN D11). Switch to
+        # pgvector/pgvector:pg16 when the Phase 3 migration introduces
+        # memory_chunks — the change is a useful signal in its own right that the
+        # project has taken on a third-party infrastructure dependency.
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: friday_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply migrations
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/friday_ci
+        run: pnpm db:migrate
+
+      - name: Seed
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/friday_ci
+        run: pnpm db:seed
+
+      - name: Migrations are idempotent on re-run
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/friday_ci
+        run: pnpm db:migrate
+
+      - name: Schema matches the Drizzle definition
+        # Catches a hand-edited migration drifting from schema.ts, which would
+        # otherwise only surface as a runtime error in a later phase.
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/friday_ci
+        run: |
+          pnpm --filter @friday/db generate
+          if ! git diff --quiet -- packages/db/migrations; then
+            echo "::error::The Drizzle schema and the committed migrations disagree."
+            git diff --stat -- packages/db/migrations
+            exit 1
+          fi

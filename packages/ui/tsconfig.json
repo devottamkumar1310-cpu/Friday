@@ -1,0 +1,10 @@
+{
+  "extends": "@friday/config/tsconfig/react.json",
+  "compilerOptions": {
+    // Browser-only by construction: a presentational package has no business
+    // reaching for Node APIs, so the types are not made available.
+    "types": ["react", "react-dom"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

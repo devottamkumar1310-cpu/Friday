@@ -1,0 +1,276 @@
+# FRIDAY — Architecture Changelog
+
+> Records every change to the frozen blueprint, with rationale.
+> **Current baseline: Blueprint v1.3 — FROZEN — Phase 1 (The Spine) baseline.**
+
+---
+
+## Blueprint v1.0 — Frozen
+
+**Scope:** the seven blueprint documents, as amended by the eight critical fixes below.
+**Preceded by:** [DESIGN_REVIEW.md](DESIGN_REVIEW.md) — the pre-implementation technical design review that identified them.
+
+**Frozen documents**
+
+| Document                                               | Version |
+| ------------------------------------------------------ | ------- |
+| [PROJECT_VISION.md](PROJECT_VISION.md)                 | 1.0     |
+| [PRODUCT_REQUIREMENTS.md](PRODUCT_REQUIREMENTS.md)     | 1.1     |
+| [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md)       | 1.1     |
+| [AI_DECISION_ENGINE.md](AI_DECISION_ENGINE.md)         | 1.1     |
+| [DATABASE_DESIGN.md](DATABASE_DESIGN.md)               | 1.1     |
+| [API_SPECIFICATION.md](API_SPECIFICATION.md)           | 1.1     |
+| [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) | 1.1     |
+
+`DESIGN_REVIEW.md` is **not** amended. It is a point-in-time record of what the blueprint looked like before these fixes, and rewriting it would destroy the audit trail. Its findings read as historical by design.
+
+---
+
+## Changes in v1.0 — the eight critical fixes
+
+Each entry: what was wrong, why it mattered, what changed, and which documents moved.
+
+### C1 · Near-horizon plan materialisation
+
+**Was:** plan versions materialised the entire remaining horizon, so every re-plan cloned the full schedule — ~72,000 task rows per learner per goal, ~7.2B rows at 100k users. Neither `tasks` nor `study_blocks` was partitioned.
+**Why it mattered:** a hard scalability blocker, and it made nightly re-planning unaffordable in both compute and storage.
+**Changed:** a plan version now materialises concrete blocks and tasks for a **14-day window** (`window_start`, `window_end`); everything beyond lives in `projection` as concept → target-week with aggregate minutes. Superseded versions have their materialised rows pruned after 30 days (`pruned_at`); version rows, feasibility snapshots, projections, and diffs are kept indefinitely. Steady-state rows per learner drop from ~72,000 to a few hundred, and partitioning these tables becomes unnecessary.
+**No product behaviour changes** — nobody needs day 217 scheduled to the minute.
+**Documents:** `DATABASE_DESIGN` §4.3, §7 · `AI_DECISION_ENGINE` §10.2 · `API_SPECIFICATION` §5.4 · `IMPLEMENTATION_ROADMAP` 1.7, day 6 · `SYSTEM_ARCHITECTURE` ADR-014
+
+### C2 · Application-generated UUIDv7
+
+**Was:** every table used `DEFAULT uuidv7()` while the engine was pinned to PostgreSQL 16. `uuidv7()` is a **PostgreSQL 18 builtin** — migration `0001` would fail on every table. `citext` and `vector` had no `CREATE EXTENSION` preamble anywhere.
+**Why it mattered:** nothing could be built at all.
+**Changed:** IDs are generated in the application layer (Drizzle `$defaultFn`), removing the engine-version constraint entirely and making ID generation unit-testable without a database. Added §1.1 Required Extensions as migration `0000`. Engine now reads "PostgreSQL 16+".
+**Documents:** `DATABASE_DESIGN` header, D1, new §1.1, all DDL · `AI_DECISION_ENGINE` §13.1 · `SYSTEM_ARCHITECTURE` ADR-018
+
+### C3 · Invalid CHECK constraint removed
+
+**Was:** `users_auth_method CHECK (… OR id IN (SELECT user_id FROM accounts))`. PostgreSQL does not permit subqueries in check constraints.
+**Why it mattered:** hard DDL error.
+**Changed:** constraint dropped; "every account has at least one auth method" moved to the identity service and listed in §8 alongside the other service-enforced invariants, with its reason.
+**Documents:** `DATABASE_DESIGN` §4.1, §8
+
+### C4 · Canonical concept vocabulary
+
+**Was:** `questions.concept_key` was described as a canonical slug, but `concepts` had no `concept_key` column — no join path existed. `question_concepts` carried `user_id`, contradicting the "shared across users" model on the same table.
+**Why it mattered:** generated-content reuse is one of five controls holding AI spend to $0.60/user/month (NFR-4.5). As written it was unqueryable, and AI-generated curricula would have produced a vocabulary of one and a cache hit rate of zero.
+**Changed:** added `canonical_concepts` (a small curated vocabulary) and `concepts.concept_key` referencing it. `question_concepts` replaced by `question_concept_keys` — shared, no `user_id`. The Curriculum Architect must map each generated concept to an existing key or return `null`; inventing keys is rejected by structural validation. `concept_key IS NULL` is a valid state meaning "private concept, no content sharing, higher cost."
+**Documents:** `DATABASE_DESIGN` §2, §4.2, §4.5, §5, §6, §8 · `SYSTEM_ARCHITECTURE` §5.5, ADR-016 · `PRODUCT_REQUIREMENTS` NFR-7.2 · `IMPLEMENTATION_ROADMAP` 1.8, 1.9
+
+### C5 · Two-tier priority computation
+
+**Was:** `DATABASE_DESIGN` stored `tasks.priority_score` "at generation" while `AI_DECISION_ENGINE` described a full pipeline at decision time. Both could not be true, and the stored form was wrong regardless — decay risk changes daily.
+**Why it mattered:** either the recommendation is stale within 24 hours, or the 300 ms budget (NFR-1.7) is unachievable, because urgency needs a backward DAG pass and leverage needs transitive descendant counts.
+**Changed:** formalised the split. **Structural** terms (Impact, Urgency, Leverage, Readiness, Cost) computed once per plan version into `tasks.structural_factors`. **Volatile** terms (DecayRisk, effective mastery, time fit, selection modifiers) recomputed per request over the materialised window only. No blended score is ever stored. This also resolves E-26 (enormous curricula) structurally rather than by assertion.
+**Documents:** `AI_DECISION_ENGINE` new §6.0, header refinements table · `DATABASE_DESIGN` §4.3 · `SYSTEM_ARCHITECTURE` §6.3, §8, ADR-015 · `API_SPECIFICATION` §5.5 · `IMPLEMENTATION_ROADMAP` 1.5
+
+### C6 · Request-time template rationale
+
+**Was:** rationale prose was LLM-generated asynchronously into `tasks.rationale`.
+**Why it mattered:** once C5 recomputes volatile factors at request time, stored prose can name a factor that no longer dominates — violating invariant **I-11** and traceability guarantee **T3**, the two properties the entire explainability story rests on. Per DP3 that is the highest-severity bug class in this product, not a copy defect.
+**Changed:** the Next Action rationale is now **always** a deterministic template selected by dominant factor and filled from the live factor table — zero cost, zero latency, faithful by construction. The `rationale` column is removed. LLM-authored prose is confined to surfaces where context is fixed at generation time (daily brief, weekly review, insights, coach, feasibility explanation). Net effect is a **simplification**: the rationale pre-generation job leaves the critical path.
+**Documents:** `AI_DECISION_ENGINE` §12.2, §14.2 · `DATABASE_DESIGN` §4.3 · `API_SPECIFICATION` §5.4, §5.5 · `PRODUCT_REQUIREMENTS` NFR-1.7 · `SYSTEM_ARCHITECTURE` §8 · `IMPLEMENTATION_ROADMAP` 2.9
+
+### C7 · AI tool executor injection
+
+**Was:** dependency rules forbade `packages/ai` from importing `packages/db`, but §5.6 defined read tools that fundamentally need data. The resolution was never stated.
+**Why it mattered:** a developer would hit this on day one of Phase 2 and take the path of least resistance — adding the import and silently breaking the boundary that keeps the context builder the single auditable entry point for everything a model sees.
+**Changed:** stated the contract explicitly. `packages/ai` declares tool **schemas** only; the service layer injects **executors** at agent construction. Agents never resolve data themselves. Enforced by an ESLint boundary rule added in Phase 0.
+**Documents:** `SYSTEM_ARCHITECTURE` §5.6, §9, ADR-017
+
+### C8 · Minor consent moved to M0
+
+**Was:** date of birth captured at M1, with under-18 users merely "flagged."
+**Why it mattered:** the stated launch segment (JEE/NEET aspirants) is **predominantly 16–18**, and India's DPDP Act 2023 requires verifiable parental consent under 18. The M0 build would have onboarded minors with no consent mechanism, for a segment where minors are the majority rather than an edge case.
+**Changed:** DOB captured at signup and required before Goal creation; `is_minor` derived at capture so consent state cannot flip mid-session on a birthday; under-13 blocked; under-18 gated until guardian consent is recorded. Column stays nullable with a service gate rather than `NOT NULL` — the user row exists from OAuth callback, before onboarding can ask.
+**Open:** what "verifiable" requires is a legal question, not an engineering one. Flagged in the readiness gate.
+**Documents:** `PRODUCT_REQUIREMENTS` FR-1.6, §4 · `DATABASE_DESIGN` §4.1, §8 · `IMPLEMENTATION_ROADMAP` 0.4b, day 2
+
+### Also applied — R4 · M0 engine subset frozen
+
+Not a critical defect, but on the gate: `AI_DECISION_ENGINE` deepened Phase 1 after the 14-day plan was written. Added **§1.1 What ships at M0**, freezing the subset — fixed weights, plan-position urgency, depth-1 leverage, hysteresis as the only modifier, confidence traced but not surfaced. Every deferred item slots into an existing pipeline stage without rework.
+**Documents:** `AI_DECISION_ENGINE` §1.1 · `IMPLEMENTATION_ROADMAP` 1.5, §6.1 day 5, risk register
+
+---
+
+## Consistency pass — result
+
+Verified mechanically across all seven documents:
+
+| Check                                                                                                                                      | Result                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| `DEFAULT uuidv7` outside the review record                                                                                                 | 0                                                                  |
+| `question_concepts` (old name)                                                                                                             | 0                                                                  |
+| `priority_score` / `priority_factors` (old names)                                                                                          | 0                                                                  |
+| `tasks.rationale` as a live specification                                                                                                  | 0                                                                  |
+| `users_auth_method`                                                                                                                        | 0                                                                  |
+| New entities referenced consistently (`canonical_concepts`, `concept_key`, `window_start`, `structural_factors`, `projection`, `is_minor`) | Present and aligned in every document that describes the behaviour |
+
+Two stragglers found and fixed during the pass: the event matrix in `AI_DECISION_ENGINE` §14.2 still listed rationale pre-generation as an async consumer, and the feasibility `explanation` note in `API_SPECIFICATION` §5.2 needed to distinguish itself from the Next Action rationale (it is a stable-context surface, so LLM prose remains correct there).
+
+**No remaining contradictions. No remaining critical issues.**
+
+---
+
+## Deferred — carried forward, not lost
+
+These were accepted in the review and are **not** part of v1.0. They are scheduled, with gates.
+
+| Gate                         | Items                                                                                                                                                                                                                                                        |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Before Phase 3**           | R1 batch capacity validated (split NFR-1.6 into initial vs. re-plan) · R2 AI cost model derived bottom-up · R5 verdict hysteresis · R6 trace on cache-miss only, written async · I1 decision timestamp as explicit trace input · I7 advisory lock on re-plan |
+| **Before Public Beta (M-H)** | R3 shared-node curriculum decision · R9 auth hardening (lockout, enumeration) · I6 trace API · I8 per-channel delivery · I9 template versioning                                                                                                              |
+| **Opportunistic**            | I2 server-side `originated_from` verification · I3 shared-artifact generation invariant · I4 weight normalisation · I5 health/usage endpoints · I10 atomic accept-and-start · N1–N5                                                                          |
+
+---
+
+## Change Request Process
+
+The blueprint is frozen. It is no longer edited in place.
+
+**A change request is required for:** a new table or column, a new endpoint or a breaking change to one, a change to the priority formula or its factors, a change to a stated invariant (I-1…I-16, T1…T4), a new external dependency, or anything that alters the deterministic/AI boundary.
+
+**Not required for:** implementation detail within a specified contract, prompt text, UI copy, bug fixes that restore documented behaviour, or config-value tuning that follows §17's versioning rules.
+
+**Format** — one entry appended to this file:
+
+```markdown
+### CR-00N · <title>
+
+**Status:** proposed | accepted | rejected | superseded
+**Raised by / date:**
+**Problem:** what is actually broken or blocked — with evidence, not a hunch
+**Proposed change:**
+**Documents affected:**
+**Invariants affected:** (or "none")
+**Alternatives considered:**
+**Decision + rationale:**
+```
+
+**Rules**
+
+1. Nothing merges against an unaccepted CR.
+2. A CR that touches an invariant needs a second reviewer.
+3. Rejected CRs stay in the file. Knowing what was considered and declined is as valuable as knowing what was built.
+4. Accepted CRs bump the affected documents' minor version and are listed under a new baseline heading here.
+5. A CR is not a design document. If it needs more than a page, the change is large enough to warrant a real review like the one that produced v1.0.
+
+---
+
+## Change Requests
+
+### DR-001 · Session layer stays first-party (ADR-007 amended)
+
+**Status:** accepted · **Raised:** Phase 0 implementation · **Type:** decision, not a design change
+
+**Problem.** Roadmap 0.4 and ADR-007 named **Better Auth**. Implementation found three incompatibilities with the frozen schema, one of which is a security property rather than a naming difference: `auth_sessions.token_hash` (_"never store the raw token"_) versus Better Auth's `session.token`, which holds the token itself. Also `email_verified_at timestamptz` versus its boolean `emailVerified`, and a required `verification` table the schema does not define.
+
+**Decision.** Keep the first-party session layer. **The frozen blueprint takes precedence over any third-party library.** What ADR-007 actually decided — database-backed, immediately revocable sessions with PII in our own Postgres — is unchanged and fully realised. A custom Better Auth adapter may be evaluated later if it provides clear benefit without compromising the architecture; that would be a new change request.
+
+**Documents updated:** `SYSTEM_ARCHITECTURE` §2 stack table, §7.4 (new), ADR-007 status.
+
+**Verified at runtime:** the raw cookie value appears nowhere in `auth_sessions`, not even as a substring; passwords are Argon2id; revocation takes effect on the next request.
+
+---
+
+### CR-001 · Phase 0 implementation reconciliation
+
+**Status:** accepted · **Raised:** Phase 0 completion report · **Type:** documentation reconciliation
+
+Four items where implementation and blueprint disagreed. None changes a table, an endpoint, or an invariant; all are recorded rather than left as undocumented deviations.
+
+| Item                       | Was                                                                 | Now                                                                                  | Why                                                                                                                                                                                                                    |
+| -------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D-3** seed scope         | Roadmap 0.10: user + goal + 40-concept curriculum + 30 days history | Phase 0 seeds the harness and identity fixtures; the full fixture moves to 1.1       | Roadmap 0.3 limits the Phase 0 migration to identity tables. A seed cannot populate tables that do not exist — the two roadmap items contradicted each other.                                                          |
+| **D-4** client generation  | `openapi.v1.json → openapi-typescript → typed client`               | One endpoint registry projects to **both** the OpenAPI document and the typed client | The published spec still serves external and mobile consumers — the reason OpenAPI beat tRPC. Typing the in-repo client from the schemas directly is what AP2 actually asks for, with no lossy JSON-Schema round trip. |
+| **D-5** onboarding default | `'{"step":"dob",…}'`                                                | `'{"step":"date_of_birth",…}'`                                                       | The step enum introduced in Phase 0's contracts uses `date_of_birth`. The document was inconsistent with itself.                                                                                                       |
+| **Error codes**            | §6.3 taxonomy                                                       | Added `UNDER_MINIMUM_AGE`, `DATE_OF_BIRTH_REQUIRED`, `FORBIDDEN`                     | Required by FR-1.6 and by the CSRF origin check. Additive to a response enum, which §7.2 classifies as non-breaking.                                                                                                   |
+| **Boundaries**             | §9 silent on `ui` and `observability`                               | Both declared leaves; an undeclared workspace is now a hard error                    | The blueprint defined rules for five of seven workspaces. Leaving two undeclared invites the first violation to go unnoticed.                                                                                          |
+
+**Documents updated:** `IMPLEMENTATION_ROADMAP` 0.10 · `API_SPECIFICATION` §6.3, §7.4 · `DATABASE_DESIGN` §4.1 · `SYSTEM_ARCHITECTURE` §9.
+
+---
+
+### CR-002 · Move `CREATE EXTENSION vector` to the migration that needs it
+
+**Status:** 🟡 **proposed — not applied** · **Raised:** Phase 0 runtime verification · **Type:** migration sequencing
+
+**Problem — found empirically, not theorised.** Migration `0000_extensions.sql` runs `CREATE EXTENSION IF NOT EXISTS vector` before any table. Verifying against a real PostgreSQL 18.4 showed:
+
+```
+available: citext@1.8, pgcrypto@1.4        ← vector is absent
+ERROR: extension "vector" is not available
+HINT:  The extension must first be installed on the system where PostgreSQL is running.
+```
+
+`citext` ships with PostgreSQL. **`vector` does not** — pgvector is a third-party extension requiring a separate install, a specific Docker image, or a managed provider that bundles it.
+
+So migration 0000 requires pgvector in **every** environment from day one — local, CI, preview, production — for `memory_chunks.embedding`, a table DATABASE_DESIGN §4.6 does not introduce until **Phase 3**. Any contributor without Docker or a pgvector-capable Postgres cannot run migration 0001 at all.
+
+**Proposed change.** Keep `citext` and `set_updated_at()` in 0000. Move `CREATE EXTENSION vector` into the migration that creates `memory_chunks`. The principle generalises: **an extension is installed by the migration that first needs it**, so a Phase 0 environment never carries a Phase 3 dependency.
+
+**Documents affected:** `DATABASE_DESIGN` §1.1 · `packages/db/migrations/0000_extensions.sql` · the CI Postgres image may then be stock `postgres:16` until Phase 3.
+
+**Invariants affected:** none.
+
+**Alternatives considered.** (a) Require pgvector everywhere from day one — correct today, but taxes every environment for months, and it is what blocked local verification. (b) Make the statement conditional on a probe — hides a real dependency behind a silent branch. (c) Status quo plus documentation — the failure would still be a hard stop, just a documented one.
+
+**Decision: accepted and applied.** `CREATE EXTENSION vector` was removed from `0000_extensions.sql` and moved to the migration that creates `memory_chunks` (Phase 3). The general rule is now **D11**:
+
+> **An extension is installed by the migration that first requires it, never by an earlier bootstrap migration.**
+
+**Documents updated:** `DATABASE_DESIGN` header, D11 (new), §1.1 (rewritten), §4.6, §9 · `SYSTEM_ARCHITECTURE` §2 stack table, §3 infrastructure diagram, ADR-004 · `.github/workflows/ci.yml` (Postgres image `pgvector/pgvector:pg16` → `postgres:16`) · `.env.example` · `packages/db/migrations/0000_extensions.sql`.
+
+**Enforced, not merely documented.** Three tests in `packages/db` now hold the rule:
+
+1. The bootstrap migration must not install `vector`.
+2. Any migration using a vector type or index must be preceded — in the same file or an earlier one — by `CREATE EXTENSION vector`, with the extension above the first dependent object.
+3. Every migration before the first one requiring a third-party extension must need only bundled contrib. A deliberate tripwire fires when that stops being true, with a message naming the migration and listing what to change (CI image, `.env.example`, the expectation itself).
+
+Guards were validated against three simulated Phase 3 migrations: uses-without-installing → caught; installs-below-the-table → caught; installs-above-the-table → passes.
+
+**Verified at runtime.** On a PostgreSQL 18.4 with pgvector confirmed **absent**, a freshly created database ran the complete migration chain with no workaround, twice (idempotent), then seeded twice, then passed all 71 Phase 0 runtime checks.
+
+---
+
+### CR-003 · Phase 1 implementation reconciliation
+
+**Status:** accepted · **Raised:** Phase 1 (The Spine) completion report · **Type:** schema addition + documentation reconciliation
+
+Mirrors CR-001's role for Phase 0: records where the Phase 1 implementation and the blueprint disagreed, so nothing is left as a silent deviation. One item required a schema change; the rest are deferred, not contradicted.
+
+**Schema change — `mastery_states` gains two columns.**
+
+| Was                                                                                                                                                            | Now                                                                                                   | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mastery_states` per DATABASE_DESIGN §4.6: `mastery, confidence, evidence_count, total_minutes, accuracy_rate, first_studied_at, last_evidence_at, updated_at` | Adds `distinct_sources int NOT NULL DEFAULT 0` and `outcome_variance numeric(4,3) NOT NULL DEFAULT 0` | AI_DECISION_ENGINE §5.3 specifies belief confidence κ as a function of four inputs — volume, **diversity** (distinct sources/item types), **consistency** (outcome variance), and recency. The frozen table carried no column for the diversity or consistency signal, so `core/mastery`'s `updateBeliefConfidence` — required by the same spec section — had nothing to read on a cold load. Additive only: both columns default to `0`, no existing column changed shape, no invariant affected. |
+
+**Documents updated:** `DATABASE_DESIGN` §4.6 (table DDL), header (Version 1.2 → 1.3).
+
+**Invariants affected:** none. **Breaking:** no.
+
+**Deferred, not contradicted** — accepted as out of Phase 1's scope, each with a named gate:
+
+| Item                                                                                           | What                                                                                                                                                                                                 | Gate                                                                                                                  |
+| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Partitioning of `study_sessions`, `evidence_events`, `learning_events`, `decision_traces` (D7) | Shipped as ordinary tables in Phase 1; DATABASE_DESIGN §10 itself stages partitioning at the "<10k DAU" scale, not as a Phase 1 requirement                                                          | Before production traffic approaches that scale                                                                       |
+| Redis / Next Action caching (API_SPECIFICATION §5.5)                                           | Next Action computed fresh every request; `cacheHit` always `false`, honestly reported rather than faked                                                                                             | When Redis is added to the dependency set (no engine change required — same function signature)                       |
+| Async plan generation via Inngest (roadmap 1.11)                                               | `POST /goals` and `POST /goals/{id}/plans/regenerate` generate synchronously; the template path's `201` is blueprint-compliant, but the documented `planJobId` field is not returned                 | When curriculum/plan generation cost grows enough to need it — a route-handler change, not a `core/scheduling` change |
+| Curriculum Architect AI agent (roadmap 1.9)                                                    | Goal creation accepts a curated `templateSlug` only; `curricula.source` is always `'template'`. `'ai_generated'` remains valid and `concept_key` resolution is already enforced on the template path | Phase 2, as originally scheduled — Phase 1's brief explicitly scoped to the deterministic engine only                 |
+
+Full detail, including the runtime-verified Golden Path transcript this CR is drawn from: [PHASE_1_REPORT.md](PHASE_1_REPORT.md).
+
+---
+
+---
+
+## Baseline History
+
+| Version | Date   | Summary                                                                                                                                                                                |
+| ------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1.0** | Week 0 | Initial blueprint (7 documents) + design review + 8 critical fixes. **Frozen.**                                                                                                        |
+| **1.1** | Week 1 | Phase 0 complete and runtime-verified. DR-001 (ADR-007 amended) and CR-001 applied. CR-002 open. **Superseded.**                                                                       |
+| **1.2** | Week 1 | CR-002 applied: extensions travel with the schema that needs them (D11). Verified on a clean PostgreSQL without pgvector. **Superseded.**                                              |
+| **1.3** | Week 2 | Phase 1 (The Spine) — the deterministic domain engine — complete and runtime-verified. CR-003 applied (`mastery_states` diversity/consistency columns). **Frozen — Phase 2 baseline.** |

@@ -1,0 +1,5 @@
+{
+  "extends": "@friday/config/tsconfig/node.json",
+  "include": ["src/**/*", "scripts/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
