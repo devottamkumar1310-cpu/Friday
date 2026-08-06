@@ -1,7 +1,7 @@
 # FRIDAY — Architecture Changelog
 
 > Records every change to the frozen blueprint, with rationale.
-> **Current baseline: Blueprint v1.3 — FROZEN — Phase 1 (The Spine) baseline.**
+> **Current baseline: Blueprint v1.4 — FROZEN — Phase 2 (Intelligence Layer) baseline.**
 
 ---
 
@@ -264,13 +264,58 @@ Full detail, including the runtime-verified Golden Path transcript this CR is dr
 
 ---
 
+### CR-004 · Phase 2 implementation reconciliation
+
+**Status:** accepted · **Raised:** Phase 2 (Intelligence Layer) completion · **Type:** schema addition + dependency + documentation reconciliation
+
+**1. `ModelProvider` seam between agents and the vendor SDK · additive, no document changed**
+
+SYSTEM_ARCHITECTURE §5 specifies the AI SDK as the orchestration layer but does not say how agents reach it. Phase 2 introduces a `ModelProvider` interface in `packages/ai`; the Anthropic/AI-SDK implementation and a recorded-fixture implementation both satisfy it.
+
+This is not a deviation — it is what three existing requirements jointly demand. **A6** requires a deterministic fallback for every AI call. **§7.2** forbids live model calls in CI and mandates recorded fixtures. **ADR-012** anticipates provider failover. None is achievable if agents import a vendor SDK directly. The seam is the mechanism, and it is why every Phase 2 agent is testable with no API key.
+
+**2. Vercel AI SDK pinned to v5, not the current v7**
+
+§2.1 names "Vercel AI SDK v5". pnpm resolves `ai@latest` to v7. Pinned to `ai@^5` / `@ai-sdk/anthropic@^2` to honour the frozen text; v7's advantages are real but the blueprint outranks the newer library, consistent with **DR-001**. Because the SDK sits behind `ModelProvider`, upgrading later is a one-file change and does not need to touch an agent.
+
+**3. `mastery_states` reads gained `distinct_sources` / `outcome_variance` consumers**
+
+No schema change — CR-003 added the columns. Phase 2 is the first code to _read_ them, via `updateBeliefConfidence`. Recorded here so the CR-003 rationale is traceable to a consumer.
+
+**4. Deferred tables, following the established phase-scoping precedent**
+
+| Table                                                                     | Deferred to | Why                                                                                                     |
+| ------------------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------- |
+| `directives` + `directive_type` / `directive_status` / `delivery_channel` | Phase 4     | Proactivity is Phase 4; the detectors and nudge policy that write these do not exist                    |
+| `audit_log`                                                               | Phase 4     | Serves the admin console, which ships with it                                                           |
+| `memory_chunks` + `vector` extension                                      | Phase 3     | The only pgvector-dependent object in the schema (D11); semantic retrieval is not a Phase 2 deliverable |
+
+`packages/ai/src/context` accordingly returns `retrieved: []` unconditionally, and the field is documented as Phase 3.
+
+**5. Three of six agents implemented**
+
+Phase 2 ships **Curriculum Architect** (inherited 1.9), **Coach** (2.6), and **Content Generator** (2.7). The **Planner Advisor**, **Diagnostician**, and **Reflector** are Phase 3 per the roadmap; their names are already fixed in the `AgentName` union and their routing tiers in §5.3's table, so adding them changes no interface.
+
+**6. Defect found and fixed during Phase 2 runtime verification — belief confidence with a single observation**
+
+Not a blueprint change, but a correctness note worth recording. AI_DECISION_ENGINE §5.3 derives κ partly from _consistency_ — "variance across recent outcomes". With exactly one observation there is no variance, so the term scores as **perfectly consistent** and inflates κ (observed: 0.525 after one answer, above the 0.35 provisional threshold).
+
+Phase 2's weak-concept drill-down therefore checks evidence _count_ directly rather than trusting κ alone (`PROVISIONAL_EVIDENCE_COUNT = 3`). The underlying κ behaviour in `core/mastery` is **unchanged** — altering a frozen Phase 1 formula mid-phase would be exactly the kind of unilateral change the CR process exists to prevent. **Proposed for Phase 3:** damp the consistency input when `evidenceCount < 2`, since undefined variance is not zero variance. Filed against open question **Q7** ("minimum evidence before ρ and π depart from 1.0"), which is the same class of problem.
+
+**Documents updated:** none required. **Invariants affected:** none. **Breaking:** no.
+
+Full detail: [PHASE_2_REPORT.md](PHASE_2_REPORT.md).
+
+---
+
 ---
 
 ## Baseline History
 
-| Version | Date   | Summary                                                                                                                                                                                |
-| ------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1.0** | Week 0 | Initial blueprint (7 documents) + design review + 8 critical fixes. **Frozen.**                                                                                                        |
-| **1.1** | Week 1 | Phase 0 complete and runtime-verified. DR-001 (ADR-007 amended) and CR-001 applied. CR-002 open. **Superseded.**                                                                       |
-| **1.2** | Week 1 | CR-002 applied: extensions travel with the schema that needs them (D11). Verified on a clean PostgreSQL without pgvector. **Superseded.**                                              |
-| **1.3** | Week 2 | Phase 1 (The Spine) — the deterministic domain engine — complete and runtime-verified. CR-003 applied (`mastery_states` diversity/consistency columns). **Frozen — Phase 2 baseline.** |
+| Version | Date   | Summary                                                                                                                                                                               |
+| ------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1.0** | Week 0 | Initial blueprint (7 documents) + design review + 8 critical fixes. **Frozen.**                                                                                                       |
+| **1.1** | Week 1 | Phase 0 complete and runtime-verified. DR-001 (ADR-007 amended) and CR-001 applied. CR-002 open. **Superseded.**                                                                      |
+| **1.2** | Week 1 | CR-002 applied: extensions travel with the schema that needs them (D11). Verified on a clean PostgreSQL without pgvector. **Superseded.**                                             |
+| **1.3** | Week 2 | Phase 1 (The Spine) — the deterministic domain engine — complete and runtime-verified. CR-003 applied (`mastery_states` diversity/consistency columns). **Superseded.**               |
+| **1.4** | Week 3 | Phase 2 (Intelligence Layer) — AI subsystem, Coach, practice loop, progress and weak-concept surfaces — complete and runtime-verified. CR-004 applied. **Frozen — Phase 3 baseline.** |

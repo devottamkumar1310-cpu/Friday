@@ -29,6 +29,13 @@
       "when": 1786012581772,
       "tag": "0003_curriculum_planning_execution_memory_traces",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786016374375,
+      "tag": "0004_assessment_intelligence_coach_platform",
+      "breakpoints": true
     }
   ]
 }

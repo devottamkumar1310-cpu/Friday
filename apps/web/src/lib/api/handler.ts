@@ -116,6 +116,117 @@ export function authedRoute<TSchema extends z.ZodTypeAny | undefined = undefined
   });
 }
 
+/**
+ * An authenticated endpoint that responds with an SSE stream rather than JSON
+ * (API_SPECIFICATION §5.10).
+ *
+ * Shares the auth, CSRF, and request-id handling of `authedRoute` — the only
+ * difference is the response shape, and that difference is deliberately the
+ * *only* thing a caller has to think about. Errors raised before the first byte
+ * still return a normal JSON error; once the stream is open, failures are
+ * delivered as an `error` event instead, because the status line has already
+ * been sent.
+ */
+export function sseRoute<TSchema extends z.ZodTypeAny | undefined = undefined>(config: {
+  body?: TSchema;
+  /**
+   * Returns the stream rather than being a generator itself.
+   *
+   * The distinction is load-bearing: a generator function's body does not run
+   * until its first `next()`, which is after the 200 and the headers have
+   * already gone out — so a pre-flight failure would arrive as a mid-stream
+   * error instead of an honest status code. An async function that throws
+   * before returning its iterable fails while a real error response is still
+   * possible.
+   */
+  handler: (
+    ctx: AuthedContext<TSchema extends z.ZodTypeAny ? z.infer<TSchema> : undefined>,
+  ) => Promise<AsyncIterable<{ event: string; data: unknown }>>;
+}): NextHandler {
+  return async (req, segment) => {
+    const requestId = req.headers.get('x-request-id') ?? newRequestId();
+
+    return withRequestContext(
+      { requestId, route: `${req.method} ${new URL(req.url).pathname}` },
+      async () => {
+        try {
+          assertSameOrigin(req);
+
+          const token = req.cookies.get(SESSION_COOKIE)?.value;
+          if (!token) throw new ApiError(ERROR_CODES.SESSION_EXPIRED);
+
+          const resolved = await resolveSession(token);
+          if (!resolved) throw new ApiError(ERROR_CODES.SESSION_EXPIRED);
+          await touchSession(resolved.session);
+
+          const params = (await segment?.params) ?? {};
+          const body = await parseBody(req, config.body);
+
+          // Awaited here, so anything that fails before the first chunk — an
+          // unconfigured provider, a missing thread — still becomes a normal
+          // JSON error rather than a 200 carrying an error event.
+          const iterator = await config.handler({
+            req,
+            body,
+            meta: requestMeta(req),
+            requestId,
+            params,
+            user: resolved.user,
+            session: resolved.session,
+          } as AuthedContext<TSchema extends z.ZodTypeAny ? z.infer<TSchema> : undefined>);
+
+          const encoder = new TextEncoder();
+          const stream = new ReadableStream<Uint8Array>({
+            async start(controller) {
+              try {
+                for await (const { event, data } of iterator) {
+                  controller.enqueue(
+                    encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
+                  );
+                }
+              } catch (error) {
+                // Once the stream is open the status line is spent, so a
+                // failure is delivered as an event. Preserve the real code
+                // where we have one — "AI_UNAVAILABLE" is actionable,
+                // "INTERNAL_ERROR" is not.
+                if (!isApiError(error)) captureException({ error, context: { requestId } });
+                const apiError = isApiError(error)
+                  ? error
+                  : new ApiError(ERROR_CODES.INTERNAL_ERROR, 'The stream ended unexpectedly.');
+                controller.enqueue(
+                  encoder.encode(
+                    `event: error\ndata: ${JSON.stringify({
+                      code: apiError.code,
+                      message: apiError.message,
+                    })}\n\n`,
+                  ),
+                );
+              } finally {
+                controller.close();
+              }
+            },
+          });
+
+          return new NextResponse(stream, {
+            status: 200,
+            headers: {
+              'Content-Type': 'text/event-stream; charset=utf-8',
+              'Cache-Control': 'private, no-store, no-transform',
+              Connection: 'keep-alive',
+              'X-Request-Id': requestId,
+              // Proxies that buffer defeat streaming entirely; this is the
+              // conventional opt-out and costs nothing where it is ignored.
+              'X-Accel-Buffering': 'no',
+            },
+          });
+        } catch (error) {
+          return errorResponse(error, requestId);
+        }
+      },
+    );
+  };
+}
+
 function createHandler(
   run: (req: NextRequest, requestId: string, params: RouteParams) => Promise<RouteResult<unknown>>,
 ): NextHandler {

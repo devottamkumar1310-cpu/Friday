@@ -1,9 +1,12 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import {
+  learnerFacts,
   masteryStates,
   memoryStates,
+  type LearnerFactRow,
   type MasteryStateRow,
   type MemoryStateRow,
+  type NewLearnerFactRow,
 } from '../schema/memory';
 import type { Executor } from './executor';
 
@@ -102,3 +105,53 @@ export function memoryRepository(db: Executor) {
 }
 
 export type MemoryRepository = ReturnType<typeof memoryRepository>;
+
+/**
+ * Reflective memory (FR-7.4, FR-7.6) — DATABASE_DESIGN §4.6.
+ *
+ * Deletion is honoured immediately and for real: a learner who tells FRIDAY to
+ * forget a belief about them should not find it archived-but-present.
+ */
+export function learnerFactsRepository(db: Executor) {
+  return {
+    async create(row: NewLearnerFactRow): Promise<LearnerFactRow> {
+      const [result] = await db.insert(learnerFacts).values(row).returning();
+      if (!result) throw new Error('Insert into learner_facts returned no row.');
+      return result;
+    },
+
+    async list(userId: string, category?: LearnerFactRow['category']): Promise<LearnerFactRow[]> {
+      const conditions = [eq(learnerFacts.userId, userId), eq(learnerFacts.isArchived, false)];
+      if (category) conditions.push(eq(learnerFacts.category, category));
+      return db
+        .select()
+        .from(learnerFacts)
+        .where(and(...conditions))
+        .orderBy(desc(learnerFacts.confidence));
+    },
+
+    async update(
+      userId: string,
+      factId: string,
+      patch: Partial<Pick<LearnerFactRow, 'statement' | 'confidence' | 'isArchived'>>,
+    ): Promise<LearnerFactRow | undefined> {
+      const [row] = await db
+        .update(learnerFacts)
+        .set({ ...patch, isUserEdited: true })
+        .where(and(eq(learnerFacts.id, factId), eq(learnerFacts.userId, userId)))
+        .returning();
+      return row;
+    },
+
+    /** Hard delete — FR-7.6 says honoured immediately, so it is not a soft flag. */
+    async remove(userId: string, factId: string): Promise<boolean> {
+      const deleted = await db
+        .delete(learnerFacts)
+        .where(and(eq(learnerFacts.id, factId), eq(learnerFacts.userId, userId)))
+        .returning({ id: learnerFacts.id });
+      return deleted.length > 0;
+    },
+  };
+}
+
+export type LearnerFactsRepository = ReturnType<typeof learnerFactsRepository>;

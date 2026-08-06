@@ -1,7 +1,7 @@
 # FRIDAY — AI Decision Engine
 
 > **Status:** Pre-Production · Source of Truth · **The brain**
-> **Version:** 1.1 · Blueprint v1.3
+> **Version:** 1.1 · Blueprint v1.4
 > **Depends on:** [PROJECT_VISION.md](PROJECT_VISION.md) (vocabulary, philosophy) · [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md) (§5 AI, §6.3 domain core) · [DATABASE_DESIGN.md](DATABASE_DESIGN.md) (state) · [API_SPECIFICATION.md](API_SPECIFICATION.md) (§5.5 next-action contract)
 >
 > **This document is specification, not implementation.** It defines concepts, rules, contracts, and invariants. Formulas appear as specifications to be implemented and tested against, not as code.

@@ -18,6 +18,8 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import { canonicalConcepts, curriculumTemplates } from '../src/schema/curriculum';
+import { questionConceptKeys, questions } from '../src/schema/assessment';
+import { GOLDEN_QUESTIONS } from '../src/seed-data/golden-questions';
 import { availabilityRules, consents, userPreferences, users } from '../src/schema/identity';
 import {
   JEE_PHYSICS_FOUNDATIONS_SLUG,
@@ -144,12 +146,55 @@ try {
     })
     .onConflictDoNothing({ target: curriculumTemplates.slug });
 
+  // ── Phase 2: golden-set questions (roadmap 2.12) ──────────────────────────
+  // Shared content keyed by canonical concept, so the practice loop has a cache
+  // to serve from before any generation happens. Idempotent via a stem check —
+  // `questions` has no natural unique key, and inventing one would constrain
+  // real generated content for the sake of the seed.
+  const existingStems = new Set(
+    (await db.select({ stem: questions.stem }).from(questions)).map((r) => r.stem),
+  );
+  const newQuestions = GOLDEN_QUESTIONS.filter((q) => !existingStems.has(q.stem));
+
+  if (newQuestions.length > 0) {
+    const inserted = await db
+      .insert(questions)
+      .values(
+        newQuestions.map((q) => ({
+          conceptKey: q.conceptKey,
+          type: q.type,
+          status: 'active' as const,
+          difficulty: q.difficulty,
+          stem: q.stem,
+          options: q.options ?? null,
+          correctAnswer: q.correctAnswer,
+          explanation: q.explanation,
+          generationMeta: { source: 'golden_set', handWritten: true },
+        })),
+      )
+      .returning();
+
+    await db
+      .insert(questionConceptKeys)
+      .values(
+        inserted.map((row, i) => ({
+          questionId: row.id,
+          conceptKey: newQuestions[i]!.conceptKey,
+          isPrimary: true,
+        })),
+      )
+      .onConflictDoNothing();
+  }
+
   // A learner's Goal, curriculum, plan, and study history remain a per-user
   // fixture built by exercising the API rather than seeded directly here —
   // see PHASE_1_REPORT.md's demo walkthrough for the end-to-end example.
 
   log('Seeded 2 users (1 adult, 1 minor awaiting guardian consent).');
   log(`  Seeded ${templateConcepts.length} canonical concepts + 1 curriculum template.`);
+  log(
+    `  Seeded ${newQuestions.length} golden-set questions (${GOLDEN_QUESTIONS.length} total defined).`,
+  );
   log(`  demo@friday.app  / ${DEV_PASSWORD}`);
   log(`  minor@friday.app / ${DEV_PASSWORD}`);
 } catch (error) {

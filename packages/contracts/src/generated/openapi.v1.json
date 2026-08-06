@@ -47,6 +47,22 @@
     {
       "name": "MissionControl",
       "description": "Today's Mission, Next Action, Progress, Risks"
+    },
+    {
+      "name": "Intelligence",
+      "description": "Progress, weak concepts, trends, insights"
+    },
+    {
+      "name": "Assessment",
+      "description": "Practice sets, grading, question bank"
+    },
+    {
+      "name": "Coach",
+      "description": "Conversational coaching over real learner state"
+    },
+    {
+      "name": "Memory",
+      "description": "Mastery, due reviews, and reflective beliefs"
     }
   ],
   "components": {
@@ -1107,6 +1123,367 @@
           }
         },
         "required": ["activeMinutes", "ratings"],
+        "additionalProperties": false
+      },
+      "WeakConcept": {
+        "type": "object",
+        "properties": {
+          "conceptId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "title": {
+            "type": "string"
+          },
+          "mastery": {
+            "type": "number"
+          },
+          "effectiveMastery": {
+            "type": "number"
+          },
+          "examWeight": {
+            "type": "number"
+          },
+          "weaknessScore": {
+            "type": "number"
+          },
+          "evidence": {
+            "type": "object",
+            "properties": {
+              "evidenceCount": {
+                "type": "integer"
+              },
+              "beliefConfidence": {
+                "type": "number"
+              },
+              "lastEvidenceAt": {
+                "type": ["string", "null"],
+                "format": "date-time",
+                "example": "2026-07-24T09:30:00Z"
+              },
+              "provisional": {
+                "type": "boolean"
+              }
+            },
+            "required": ["evidenceCount", "beliefConfidence", "lastEvidenceAt", "provisional"]
+          }
+        },
+        "required": [
+          "conceptId",
+          "title",
+          "mastery",
+          "effectiveMastery",
+          "examWeight",
+          "weaknessScore",
+          "evidence"
+        ]
+      },
+      "Insight": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "weakness",
+              "strength",
+              "trend",
+              "risk",
+              "milestone",
+              "root_cause",
+              "recommendation"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "integer"
+          },
+          "conceptIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUIDv7 identifier",
+              "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+            }
+          },
+          "evidence": {},
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-24T09:30:00Z"
+          }
+        },
+        "required": ["id", "type", "title", "body", "severity", "conceptIds", "createdAt"]
+      },
+      "ServedQuestion": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["mcq_single", "mcq_multi", "short_answer", "numeric", "true_false"]
+          },
+          "stem": {
+            "type": "string"
+          },
+          "options": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": ["id", "text"]
+            }
+          }
+        },
+        "required": ["id", "type", "stem"]
+      },
+      "CreatePracticeSetRequest": {
+        "type": "object",
+        "properties": {
+          "goalId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "conceptIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUIDv7 identifier",
+              "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+            },
+            "minItems": 1,
+            "maxItems": 10
+          },
+          "questionCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 5
+          },
+          "difficulty": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "default": 3
+          }
+        },
+        "required": ["goalId", "conceptIds"],
+        "additionalProperties": false
+      },
+      "SubmitResponseRequest": {
+        "type": "object",
+        "properties": {
+          "questionId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "answer": {
+            "type": "object",
+            "properties": {
+              "selected": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "value": {
+                "type": "string"
+              }
+            }
+          },
+          "responseMs": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": ["questionId", "answer"],
+        "additionalProperties": false
+      },
+      "CoachThread": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "goalId": {
+            "type": ["string", "null"],
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "title": {
+            "type": ["string", "null"]
+          },
+          "lastMessageAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-24T09:30:00Z"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-24T09:30:00Z"
+          }
+        },
+        "required": ["id", "goalId", "title", "lastMessageAt", "createdAt"]
+      },
+      "CreateThreadRequest": {
+        "type": "object",
+        "properties": {
+          "goalId": {
+            "type": ["string", "null"],
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CoachMessage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["user", "assistant", "tool"]
+          },
+          "content": {
+            "type": "string"
+          },
+          "toolCalls": {},
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-24T09:30:00Z"
+          }
+        },
+        "required": ["id", "role", "content", "createdAt"]
+      },
+      "SendCoachMessageRequest": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          }
+        },
+        "required": ["content"],
+        "additionalProperties": false
+      },
+      "LearnerFact": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUIDv7 identifier",
+            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "learning_style",
+              "misconception",
+              "strength",
+              "weakness",
+              "preference",
+              "constraint",
+              "motivation",
+              "goal_context"
+            ]
+          },
+          "statement": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "number"
+          },
+          "reinforcementCount": {
+            "type": "integer"
+          },
+          "evidenceRefs": {},
+          "conceptIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "description": "UUIDv7 identifier",
+              "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+            }
+          },
+          "isUserEdited": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-07-24T09:30:00Z"
+          }
+        },
+        "required": [
+          "id",
+          "category",
+          "statement",
+          "confidence",
+          "reinforcementCount",
+          "conceptIds",
+          "isUserEdited",
+          "createdAt"
+        ]
+      },
+      "UpdateFactRequest": {
+        "type": "object",
+        "properties": {
+          "statement": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        },
         "additionalProperties": false
       }
     },
@@ -3752,6 +4129,1948 @@
                         }
                       },
                       "required": ["session", "changes", "nextActionInvalidated"]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/intelligence/progress": {
+      "get": {
+        "summary": "Weighted progress, verdict, velocity, retention health, adherence",
+        "tags": ["Intelligence"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "weightedProgress": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        "rawProgress": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        "conceptsMastered": {
+                          "type": "integer"
+                        },
+                        "conceptsTotal": {
+                          "type": "integer"
+                        },
+                        "conceptsInProgress": {
+                          "type": "integer"
+                        },
+                        "conceptsNotStarted": {
+                          "type": "integer"
+                        },
+                        "verdict": {
+                          "type": "string",
+                          "enum": ["on_track", "at_risk", "not_feasible"]
+                        },
+                        "projectedCompletionDate": {
+                          "type": ["string", "null"],
+                          "format": "date",
+                          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                          "example": "2007-05-14"
+                        },
+                        "daysRemaining": {
+                          "type": "integer"
+                        },
+                        "velocity": {
+                          "type": "object",
+                          "properties": {
+                            "perWeek": {
+                              "type": "number"
+                            },
+                            "requiredPerWeek": {
+                              "type": "number"
+                            },
+                            "trend": {
+                              "type": "string",
+                              "enum": ["ahead", "on_pace", "declining"]
+                            }
+                          },
+                          "required": ["perWeek", "requiredPerWeek", "trend"]
+                        },
+                        "retentionHealth": {
+                          "type": "object",
+                          "properties": {
+                            "dueNow": {
+                              "type": "integer"
+                            },
+                            "overdue": {
+                              "type": "integer"
+                            },
+                            "atRisk": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": ["dueNow", "overdue", "atRisk"]
+                        },
+                        "adherence": {
+                          "type": "object",
+                          "properties": {
+                            "last7d": {
+                              "type": ["number", "null"]
+                            },
+                            "last30d": {
+                              "type": ["number", "null"]
+                            }
+                          },
+                          "required": ["last7d", "last30d"]
+                        }
+                      },
+                      "required": [
+                        "weightedProgress",
+                        "rawProgress",
+                        "conceptsMastered",
+                        "conceptsTotal",
+                        "conceptsInProgress",
+                        "conceptsNotStarted",
+                        "verdict",
+                        "projectedCompletionDate",
+                        "daysRemaining",
+                        "velocity",
+                        "retentionHealth",
+                        "adherence"
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/intelligence/weak-concepts": {
+      "get": {
+        "summary": "Weak concepts ranked by exam-weighted gap, with evidence drill-down",
+        "tags": ["Intelligence"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WeakConcept"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/intelligence/trends": {
+      "get": {
+        "summary": "Progress time series from daily snapshots",
+        "tags": ["Intelligence"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "date": {
+                            "type": "string",
+                            "format": "date",
+                            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                            "example": "2007-05-14"
+                          },
+                          "weightedProgress": {
+                            "type": "number"
+                          },
+                          "conceptsMastered": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": ["date", "weightedProgress", "conceptsMastered"]
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/intelligence/insights": {
+      "get": {
+        "summary": "Generated findings, each carrying its own evidence",
+        "tags": ["Intelligence"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Insight"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/assessments": {
+      "post": {
+        "summary": "Create a practice set, served from the shared question cache where possible",
+        "tags": ["Assessment"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePracticeSetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "assessmentId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "UUIDv7 identifier",
+                          "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                        },
+                        "attemptId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "UUIDv7 identifier",
+                          "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                        },
+                        "questions": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ServedQuestion"
+                          }
+                        },
+                        "servedFromCache": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["assessmentId", "attemptId", "questions", "servedFromCache"]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/attempts/{attemptId}/responses": {
+      "post": {
+        "summary": "Submit one answer; graded deterministically and returned with its explanation",
+        "tags": ["Assessment"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitResponseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "isCorrect": {
+                          "type": "boolean"
+                        },
+                        "correctAnswer": {},
+                        "explanation": {
+                          "type": "string"
+                        },
+                        "gradingMethod": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["isCorrect", "explanation", "gradingMethod"]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/attempts/{attemptId}/submit": {
+      "post": {
+        "summary": "Finalise an attempt: score it, then update mastery and retention from the evidence",
+        "tags": ["Assessment"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "attemptId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "UUIDv7 identifier",
+                          "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                        },
+                        "score": {
+                          "type": "number"
+                        },
+                        "maxScore": {
+                          "type": "number"
+                        },
+                        "submittedAt": {
+                          "type": ["string", "null"],
+                          "format": "date-time",
+                          "example": "2026-07-24T09:30:00Z"
+                        },
+                        "conceptBreakdown": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "conceptId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "UUIDv7 identifier",
+                                "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                              },
+                              "accuracy": {
+                                "type": "number"
+                              },
+                              "correct": {
+                                "type": "integer"
+                              },
+                              "total": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": ["conceptId", "accuracy", "correct", "total"]
+                          }
+                        },
+                        "masteryChanges": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "conceptId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "UUIDv7 identifier",
+                                "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                              },
+                              "before": {
+                                "type": "number"
+                              },
+                              "after": {
+                                "type": "number"
+                              },
+                              "delta": {
+                                "type": "number"
+                              }
+                            },
+                            "required": ["conceptId", "before", "after", "delta"]
+                          }
+                        }
+                      },
+                      "required": [
+                        "attemptId",
+                        "score",
+                        "maxScore",
+                        "submittedAt",
+                        "conceptBreakdown",
+                        "masteryChanges"
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/questions/{questionId}/report": {
+      "post": {
+        "summary": "Flag a bad question; repeated reports quarantine it",
+        "tags": ["Assessment"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "reported": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["reported"]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/coach/threads": {
+      "get": {
+        "summary": "List conversation threads",
+        "tags": ["Coach"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CoachThread"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Start a conversation thread",
+        "tags": ["Coach"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateThreadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CoachThread"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/coach/threads/{threadId}": {
+      "get": {
+        "summary": "Thread with its messages",
+        "tags": ["Coach"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "thread": {
+                          "$ref": "#/components/schemas/CoachThread"
+                        },
+                        "messages": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/CoachMessage"
+                          }
+                        }
+                      },
+                      "required": ["thread", "messages"]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/coach/threads/{threadId}/messages": {
+      "post": {
+        "summary": "Send a message — responds as an SSE stream, not JSON",
+        "tags": ["Coach"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendCoachMessageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/CoachThread"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/memory/mastery": {
+      "get": {
+        "summary": "Per-concept mastery, weakest first",
+        "tags": ["Memory"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "conceptId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "UUIDv7 identifier",
+                            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "mastery": {
+                            "type": "number"
+                          },
+                          "confidence": {
+                            "type": "number"
+                          },
+                          "evidenceCount": {
+                            "type": "integer"
+                          },
+                          "lastEvidenceAt": {
+                            "type": ["string", "null"],
+                            "format": "date-time",
+                            "example": "2026-07-24T09:30:00Z"
+                          }
+                        },
+                        "required": [
+                          "conceptId",
+                          "title",
+                          "mastery",
+                          "confidence",
+                          "evidenceCount",
+                          "lastEvidenceAt"
+                        ]
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/memory/due": {
+      "get": {
+        "summary": "Concepts due for review, by due date",
+        "tags": ["Memory"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "conceptId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "UUIDv7 identifier",
+                            "example": "018f3a2b-7c4d-7e1f-9a2b-3c4d5e6f7a8b"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "dueAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "example": "2026-07-24T09:30:00Z"
+                          },
+                          "retrievability": {
+                            "type": "number"
+                          },
+                          "reps": {
+                            "type": "integer"
+                          },
+                          "lapses": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "conceptId",
+                          "title",
+                          "dueAt",
+                          "retrievability",
+                          "reps",
+                          "lapses"
+                        ]
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/memory/facts": {
+      "get": {
+        "summary": "What FRIDAY believes about you, each with its evidence",
+        "tags": ["Memory"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LearnerFact"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/memory/facts/{factId}": {
+      "patch": {
+        "summary": "Correct a belief",
+        "tags": ["Memory"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFactRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/LearnerFact"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found, or not owned by the caller — deliberately indistinguishable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid JSON, failed domain validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a belief — honoured immediately",
+        "tags": ["Memory"],
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "deleted": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["deleted"]
                     },
                     "meta": {
                       "$ref": "#/components/schemas/ResponseMeta"

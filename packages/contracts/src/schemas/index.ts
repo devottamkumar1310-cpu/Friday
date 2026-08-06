@@ -5,3 +5,7 @@ export * from './planning';
 export * from './next-action';
 export * from './execution';
 export * from './mission-control';
+export * from './intelligence';
+export * from './assessment';
+export * from './coach';
+export * from './memory';

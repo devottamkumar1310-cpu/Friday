@@ -94,6 +94,10 @@ export function buildOpenApiDocument(): OpenAPIObject {
       { name: 'NextAction', description: 'The deterministic priority engine, on the hot path' },
       { name: 'Execution', description: 'Sessions and evidence' },
       { name: 'MissionControl', description: "Today's Mission, Next Action, Progress, Risks" },
+      { name: 'Intelligence', description: 'Progress, weak concepts, trends, insights' },
+      { name: 'Assessment', description: 'Practice sets, grading, question bank' },
+      { name: 'Coach', description: 'Conversational coaching over real learner state' },
+      { name: 'Memory', description: 'Mastery, due reviews, and reflective beliefs' },
     ],
   });
 }

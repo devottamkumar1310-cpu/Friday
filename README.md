@@ -8,7 +8,7 @@ Not a tutor. Not a planner. An intelligence that owns a student's academic state
 
 ---
 
-## Status: Blueprint v1.3 — **FROZEN** · Phase 1 (The Spine) complete and runtime-verified
+## Status: Blueprint v1.4 — **FROZEN** · Phase 2 (Intelligence Layer) complete and runtime-verified
 
 The architecture has been designed, documented, reviewed, corrected, and frozen. **Architecture first, documentation second, code third.**
 

@@ -6,16 +6,30 @@
  * and feasibility are computed in @friday/core.
  *
  * Phase 2 populates:
- *   router/       model selection, fallback chain, cost accounting
+ *   types.ts      the ModelProvider seam — the reason CI never makes a live call
+ *   router/       model selection by policy, tier degradation, cost accounting
+ *   provider/     Anthropic (AI SDK v5) and recorded-fixture implementations
  *   context/      LearnerContextPacket assembly, deterministically budgeted
- *   agents/       the six cognitive units
  *   tools/        typed declarations; executors injected by services (ADR-017)
  *   prompts/      versioned prompt modules
- *   guardrails/   input sanitisation, output validation, injection defence
- *   evals/        golden datasets and scoring harness
+ *   guardrails/   injection defence, output validation, tool-call budget
+ *   agents/       Curriculum Architect, Coach, Content Generator
+ *   evals/        golden-set scoring harness
  *
- * Phase 0 establishes only the tool-injection contract, because that boundary
- * is easiest to enforce before there is anything tempting to violate it for.
+ * Still to come: the Planner Advisor, Diagnostician, and Reflector agents
+ * (Phase 3), and semantic retrieval, which needs pgvector (Phase 3, D11).
  */
 
+export * from './types';
+export * from './router';
+export * from './context';
+export * from './guardrails';
+export * from './prompts';
 export * from './tools/types';
+export * from './tools/read-tools';
+export * from './provider/fixture';
+export * from './provider/anthropic';
+export * from './agents/curriculum-architect';
+export * from './agents/content-generator';
+export * from './agents/coach';
+export * from './evals';

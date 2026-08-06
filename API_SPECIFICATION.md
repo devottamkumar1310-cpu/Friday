@@ -1,7 +1,7 @@
 # FRIDAY — API Specification
 
 > **Status:** Pre-Production · Source of Truth
-> **Version:** 1.1 · Blueprint v1.3 · **API version:** `v1`
+> **Version:** 1.1 · Blueprint v1.4 · **API version:** `v1`
 > **Base URL:** `https://api.friday.app/api/v1` (production) · `/api/v1` (same-origin from the web app)
 > **Depends on:** [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md), [DATABASE_DESIGN.md](DATABASE_DESIGN.md)
 
