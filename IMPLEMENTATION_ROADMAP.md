@@ -1,7 +1,7 @@
 # FRIDAY — Implementation Roadmap
 
 > **Status:** Pre-Production · Source of Truth
-> **Version:** 1.1 · Blueprint v1.4
+> **Version:** 1.1 · Blueprint v1.5
 > **Depends on:** all five preceding documents
 >
 > **Stated assumptions** (confirm before Phase 0 — see [§10](#10-assumptions-to-confirm)):

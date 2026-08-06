@@ -80,7 +80,14 @@ export async function* runCoachTurn(input: CoachTurnInput): AsyncIterable<CoachE
     input.provider.id === 'google' ? ('google' as const) : ('anthropic' as const);
   let usage: TokenUsage = { ...ZERO_USAGE };
 
-  yield { type: 'start', messageId: input.messageId, model: modelId };
+  // Report the vendor actually serving the turn, not the router's Claude-named
+  // tier id — a `start` event claiming "claude-sonnet-5" while Gemini answers
+  // makes every trace that quotes it wrong.
+  yield {
+    type: 'start',
+    messageId: input.messageId,
+    model: input.provider.id === 'anthropic' ? modelId : `${input.provider.id}:${tier}`,
+  };
 
   const scan = scanForInjection(input.userMessage);
   const system = [

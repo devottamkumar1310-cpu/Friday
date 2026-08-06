@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { MainNav } from '@/components/app/main-nav';
 import { SignOutButton } from '@/components/app/sign-out-button';
 import { requireUser } from '@/lib/auth/server';
 
@@ -8,23 +9,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-dvh flex-col">
-      <header className="border-b border-border">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-6">
-            <Link href="/dashboard" className="text-sm font-semibold tracking-tight">
+      <header className="relative border-b border-border">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+          <div className="flex min-w-0 items-center gap-6">
+            <Link
+              href="/dashboard"
+              className="shrink-0 rounded-md text-sm font-semibold tracking-tight focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
               FRIDAY
             </Link>
-            <nav className="flex items-center gap-4 text-sm text-muted-foreground">
-              <Link href="/dashboard" className="hover:text-foreground">
-                Mission Control
-              </Link>
-              <Link href="/progress" className="hover:text-foreground">
-                Progress
-              </Link>
-            </nav>
+            <MainNav />
           </div>
-          <div className="flex items-center gap-3">
-            <span className="hidden text-sm text-muted-foreground sm:inline">
+
+          <div className="flex shrink-0 items-center gap-3">
+            <span className="hidden max-w-32 truncate text-sm text-muted-foreground md:inline">
               {user.displayName}
             </span>
             <SignOutButton />
@@ -32,7 +30,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </div>
       </header>
 
-      <main id="main" className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">
+      <main id="main" className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
         {children}
       </main>
     </div>

@@ -1,7 +1,7 @@
 # FRIDAY — System Architecture
 
 > **Status:** Pre-Production · Source of Truth
-> **Version:** 1.2 · Blueprint v1.4
+> **Version:** 1.2 · Blueprint v1.5
 > **Depends on:** [PROJECT_VISION.md](PROJECT_VISION.md), [PRODUCT_REQUIREMENTS.md](PRODUCT_REQUIREMENTS.md)
 
 ---

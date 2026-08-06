@@ -23,3 +23,7 @@ export * from './primitives/progress';
 export * from './primitives/skeleton';
 export * from './primitives/toast';
 export * from './primitives/states';
+export * from './primitives/select';
+export * from './primitives/textarea';
+export * from './primitives/spinner';
+export * from './primitives/callout';

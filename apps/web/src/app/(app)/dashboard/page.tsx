@@ -1,8 +1,10 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { AlertTriangle, Target } from 'lucide-react';
 import {
   Badge,
+  Button,
   Card,
   CardContent,
   CardDescription,
@@ -31,29 +33,9 @@ export default async function DashboardPage() {
   const goals = await listGoals(user);
   const goal = goals.find((g) => g.status === 'active') ?? goals[0];
 
-  if (!goal) {
-    return (
-      <div className="space-y-6">
-        <Header firstName={firstName} subtitle="Tell FRIDAY what you are working towards." />
-        <Card>
-          <CardHeader>
-            <CardTitle>Next action</CardTitle>
-            <CardDescription>
-              Once you have a goal, this is where FRIDAY tells you the single highest-impact thing
-              to do right now — and why.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <EmptyState
-              icon={<Target className="size-8" />}
-              title="No goal yet"
-              description="Create a goal to generate a curriculum and a plan."
-            />
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  // A learner with no goal has nothing to see here — send them to build one
+  // rather than showing an empty shell they have to work out how to escape.
+  if (!goal) redirect('/onboarding/availability?next=goal');
 
   const mission = await getMissionControl(user, goal.id);
   const { action, why } = mission.nextAction;
@@ -81,6 +63,15 @@ export default async function DashboardPage() {
                     deterministic template — never stored prose, never an LLM
                     (AI_DECISION_ENGINE §12.2). */}
                 <p className="mt-1 text-sm text-muted-foreground">{action.rationale}</p>
+              </div>
+
+              <div className="flex flex-wrap gap-3">
+                <Button asChild>
+                  <Link href={`/study/${action.taskId}`}>Start this now</Link>
+                </Button>
+                <Button variant="ghost" asChild>
+                  <Link href="/plan">See the full plan</Link>
+                </Button>
               </div>
 
               {why ? (

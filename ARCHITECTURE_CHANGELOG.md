@@ -1,7 +1,7 @@
 # FRIDAY — Architecture Changelog
 
 > Records every change to the frozen blueprint, with rationale.
-> **Current baseline: Blueprint v1.4 — FROZEN — Phase 2 (Intelligence Layer) baseline.**
+> **Current baseline: Blueprint v1.5 — FROZEN — Phase 3 (Launch Candidate) baseline.**
 
 ---
 
@@ -342,16 +342,44 @@ The `-latest` aliases are deliberate. Google retires dated model ids for new key
 
 **Validated live.** See [AI_VALIDATION_REPORT.md](AI_VALIDATION_REPORT.md).
 
+### CR-006 · Phase 3 resequenced to frontend completion
+
+**Status:** accepted · **Raised:** Phase 3 kickoff · **Type:** roadmap resequencing
+
+**Problem.** IMPLEMENTATION_ROADMAP §3 defines Phase 3 as **Adaptation** — nightly re-plan, drift detection, curriculum editing, the Diagnostician and Reflector agents, pgvector. The product owner instead directed Phase 3 at **completing the user-facing application** to reach a Launch Candidate.
+
+**Why this is defensible rather than drift.** After Phase 2 the backend exposed 33 endpoints and the frontend had **two** pages. A learner could not create a goal at all — there was no UI for it — so no amount of Adaptation work would have produced something a person could use. The roadmap's own R4 says _"ship the loop, then the intelligence"_, and §6.2 says _"cut features, never cut the loop."_ The loop existed in the API and not in the product. Closing that gap first is the roadmap's own priority order, even though it is not the roadmap's own phase order.
+
+**Change.** Phase 3 delivers the frontend, the endpoints the frontend needed that were specified but never built, and production UX (responsive, accessible, four states on every async surface). Roadmap §3's Adaptation scope moves to Phase 4.
+
+**Endpoints added — specified since Phase 0, never implemented:**
+
+| Endpoint                              | Spec | Why it was blocking                                                                                                                                                                         |
+| ------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET/PUT /me/availability`            | §5.1 | The scheduler cannot plan without capacity (E-6). It could only be seeded.                                                                                                                  |
+| `GET/PATCH /me/preferences`           | §5.1 | Settings had nothing to read or write                                                                                                                                                       |
+| `GET /sessions`, `GET /sessions/{id}` | §5.6 | The write side shipped in Phase 1; there was no read side                                                                                                                                   |
+| `POST /sessions/{id}/abandon`         | §5.6 | Service existed, no route                                                                                                                                                                   |
+| `GET /tasks`, `PATCH /tasks/{id}`     | §5.4 | The plan view had no data source                                                                                                                                                            |
+| `GET /tasks/{id}/study`               | —    | **New.** Composes task + concepts + mastery + active-session into one request, so the most latency-sensitive screen does not make four round trips. Additive; composes existing reads only. |
+
+**Invariants affected:** none. No engine, agent, or AI-architecture change. **Breaking:** no.
+
+**Documents updated:** `.env.example` unchanged; `IMPLEMENTATION_ROADMAP` §3's phase ordering is superseded by this entry rather than edited, preserving the audit trail.
+
+Full detail: [PHASE_3_REPORT.md](PHASE_3_REPORT.md).
+
 ---
 
 ---
 
 ## Baseline History
 
-| Version | Date   | Summary                                                                                                                                                                               |
-| ------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1.0** | Week 0 | Initial blueprint (7 documents) + design review + 8 critical fixes. **Frozen.**                                                                                                       |
-| **1.1** | Week 1 | Phase 0 complete and runtime-verified. DR-001 (ADR-007 amended) and CR-001 applied. CR-002 open. **Superseded.**                                                                      |
-| **1.2** | Week 1 | CR-002 applied: extensions travel with the schema that needs them (D11). Verified on a clean PostgreSQL without pgvector. **Superseded.**                                             |
-| **1.3** | Week 2 | Phase 1 (The Spine) — the deterministic domain engine — complete and runtime-verified. CR-003 applied (`mastery_states` diversity/consistency columns). **Superseded.**               |
-| **1.4** | Week 3 | Phase 2 (Intelligence Layer) — AI subsystem, Coach, practice loop, progress and weak-concept surfaces — complete and runtime-verified. CR-004 applied. **Frozen — Phase 3 baseline.** |
+| Version | Date   | Summary                                                                                                                                                                                                                               |
+| ------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1.0** | Week 0 | Initial blueprint (7 documents) + design review + 8 critical fixes. **Frozen.**                                                                                                                                                       |
+| **1.1** | Week 1 | Phase 0 complete and runtime-verified. DR-001 (ADR-007 amended) and CR-001 applied. CR-002 open. **Superseded.**                                                                                                                      |
+| **1.2** | Week 1 | CR-002 applied: extensions travel with the schema that needs them (D11). Verified on a clean PostgreSQL without pgvector. **Superseded.**                                                                                             |
+| **1.3** | Week 2 | Phase 1 (The Spine) — the deterministic domain engine — complete and runtime-verified. CR-003 applied (`mastery_states` diversity/consistency columns). **Superseded.**                                                               |
+| **1.4** | Week 3 | Phase 2 (Intelligence Layer) — AI subsystem, Coach, practice loop, progress and weak-concept surfaces — complete and runtime-verified. CR-004 applied. Gemini added as a second provider and live-validated (CR-005). **Superseded.** |
+| **1.5** | Week 4 | Phase 3 — the user-facing application. Frontend completed, every backend capability connected to UI, production UX. CR-006 applied. **Frozen — Launch Candidate baseline.**                                                           |

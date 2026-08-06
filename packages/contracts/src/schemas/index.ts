@@ -9,3 +9,5 @@ export * from './intelligence';
 export * from './assessment';
 export * from './coach';
 export * from './memory';
+export * from './me-settings';
+export * from './sessions';

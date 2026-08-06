@@ -225,3 +225,45 @@ export async function abandonSession(user: UserRow, sessionId: string): Promise<
   if (!session) throw ApiError.notFound();
   await executionRepository(getDb()).abandonSession(user.id, sessionId);
 }
+
+/** Session history for the UI — API_SPECIFICATION §5.6. */
+export async function listSessions(user: UserRow, limit = 20) {
+  const db = getDb();
+  const sessions = await executionRepository(db).recentSessions(user.id, limit);
+
+  const taskIds = [...new Set(sessions.map((s) => s.taskId).filter((id): id is string => !!id))];
+  const titleByTaskId = new Map<string, string>();
+  for (const taskId of taskIds) {
+    const task = await planningRepository(db).findTask(user.id, taskId);
+    if (task) titleByTaskId.set(taskId, task.title);
+  }
+
+  return sessions.map((s) =>
+    toWireSession(s, s.taskId ? (titleByTaskId.get(s.taskId) ?? null) : null),
+  );
+}
+
+export async function getSession(user: UserRow, sessionId: string) {
+  const db = getDb();
+  const session = await executionRepository(db).findSession(user.id, sessionId);
+  if (!session) throw ApiError.notFound();
+  const task = session.taskId
+    ? await planningRepository(db).findTask(user.id, session.taskId)
+    : null;
+  return toWireSession(session, task?.title ?? null);
+}
+
+export function toWireSession(session: StudySessionRow, taskTitle: string | null) {
+  return {
+    id: session.id,
+    goalId: session.goalId,
+    taskId: session.taskId,
+    taskTitle,
+    status: session.status,
+    startedAt: session.startedAt.toISOString(),
+    endedAt: session.endedAt?.toISOString() ?? null,
+    activeMinutes: session.activeMinutes,
+    selfRating: session.selfRating,
+    originatedFrom: session.originatedFrom,
+  };
+}

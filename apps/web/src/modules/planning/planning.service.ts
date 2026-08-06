@@ -13,6 +13,7 @@ import { ApiError, ERROR_CODES } from '@friday/contracts';
 import {
   availabilityRepository,
   curriculumRepository,
+  executionRepository,
   getDb,
   goalsRepository,
   memoryRepository,
@@ -524,5 +525,81 @@ export function toWireTask(task: TaskRow, concepts: { id: string; title: string 
     status: task.status,
     scheduledDate: task.scheduledDate,
     concepts,
+  };
+}
+
+/** Task listing for the plan view — API_SPECIFICATION §5.4. */
+export async function listTasks(
+  user: UserRow,
+  filters: { goalId?: string; from?: string; to?: string; status?: string },
+): Promise<{ task: TaskRow; concepts: { id: string; title: string }[] }[]> {
+  const db = getDb();
+
+  const goalId = filters.goalId ?? (await goalsRepository(db).listForUser(user.id))[0]?.id;
+  if (!goalId) return [];
+
+  const tasks =
+    filters.from && filters.to
+      ? await planningRepository(db).listTasksInWindow(user.id, goalId, filters.from, filters.to)
+      : await planningRepository(db).listPendingTasks(user.id, goalId);
+
+  const filtered = filters.status ? tasks.filter((t) => t.status === filters.status) : tasks;
+  return hydrateTasksWithConcepts(user.id, filtered);
+}
+
+export async function updateTask(
+  user: UserRow,
+  taskId: string,
+  patch: { status?: string; scheduledDate?: string; skippedReason?: string },
+): Promise<{ task: TaskRow; concepts: { id: string; title: string }[] }> {
+  const updated = await planningRepository(getDb()).updateTaskStatus(user.id, taskId, {
+    ...(patch.status ? { status: patch.status as TaskRow['status'] } : {}),
+    ...(patch.status === 'completed' ? { completedAt: new Date() } : {}),
+    ...(patch.skippedReason !== undefined ? { skippedReason: patch.skippedReason } : {}),
+  });
+  if (!updated) throw ApiError.notFound();
+  const [hydrated] = await hydrateTasksWithConcepts(user.id, [updated]);
+  if (!hydrated) throw ApiError.notFound();
+  return hydrated;
+}
+
+/**
+ * Everything the study screen needs for one task, in a single request.
+ *
+ * Four round trips on the most latency-sensitive screen in the product would
+ * be four chances to show a spinner; this collapses them into one.
+ */
+export async function getStudyTask(user: UserRow, taskId: string) {
+  const db = getDb();
+
+  const task = await planningRepository(db).findTask(user.id, taskId);
+  if (!task) throw ApiError.notFound();
+
+  const taskConcepts = await planningRepository(db).listTaskConceptsForTasks(user.id, [task.id]);
+  const conceptRows = await curriculumRepository(db).findConceptsByIds(
+    user.id,
+    taskConcepts.map((tc) => tc.conceptId),
+  );
+  const masteryRows = await memoryRepository(db).listMasteryStates(
+    user.id,
+    conceptRows.map((c) => c.id),
+  );
+  const masteryByConcept = new Map(masteryRows.map((m) => [m.conceptId, Number(m.mastery)]));
+
+  // E-19: one active session per learner. Surfacing it lets the UI resume
+  // rather than fail on a second start.
+  const active = await executionRepository(db).findActiveSession(user.id);
+
+  return {
+    task,
+    goalId: task.goalId,
+    concepts: conceptRows.map((c) => ({
+      id: c.id,
+      title: c.title,
+      description: c.description,
+      mastery: masteryByConcept.get(c.id) ?? 0,
+      estimatedMinutes: c.estimatedMinutes,
+    })),
+    activeSessionId: active && active.taskId === task.id ? active.id : null,
   };
 }

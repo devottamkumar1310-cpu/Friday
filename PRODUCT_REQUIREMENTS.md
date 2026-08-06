@@ -1,7 +1,7 @@
 # FRIDAY — Product Requirements
 
 > **Status:** Pre-Production · Source of Truth
-> **Version:** 1.1 · Blueprint v1.4
+> **Version:** 1.1 · Blueprint v1.5
 > **Depends on:** [PROJECT_VISION.md](PROJECT_VISION.md) (vocabulary, philosophy, bets)
 
 ---
