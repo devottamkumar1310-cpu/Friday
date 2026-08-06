@@ -20,7 +20,13 @@ import {
 import { logger } from '@friday/observability';
 import { buildLearnerContext } from '../ai/context-builder';
 import { buildCoachExecutors } from '../ai/tool-executors';
-import { checkBudget, getModelProvider, recordAiCall } from '../ai/provider';
+import {
+  checkBudget,
+  getModelProvider,
+  isAiConfigured,
+  pricedProviderName,
+  recordAiCall,
+} from '../ai/provider';
 
 /**
  * Coach service — roadmap 2.6.
@@ -135,7 +141,7 @@ export async function* sendMessage(
     yield event;
   }
 
-  const costUsd = estimateCostUsd(tierFor('coach'), finalUsage);
+  const costUsd = estimateCostUsd(tierFor('coach'), finalUsage, pricedProviderName());
 
   const aiCall = await recordAiCallSafely({
     userId: user.id,
@@ -198,7 +204,10 @@ export function assertCoachAvailable(): void {
   // The Coach is the one surface that genuinely cannot degrade to a
   // deterministic fallback — there is no non-AI version of a conversation.
   // Everything else in the product keeps working (NFR-2.2).
-  if (!process.env['ANTHROPIC_API_KEY']) {
+  //
+  // Asks the composition root rather than reading a vendor's env var, so this
+  // stays correct whichever provider is configured.
+  if (!isAiConfigured()) {
     throw new ApiError(
       ERROR_CODES.AI_UNAVAILABLE,
       'The coach is not configured in this environment. Your plan, next action, and sessions are unaffected.',

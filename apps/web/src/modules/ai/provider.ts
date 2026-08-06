@@ -1,8 +1,8 @@
 import {
-  createAnthropicProvider,
-  createFixtureProvider,
+  resolveProvider,
   isOverBudget,
   type ModelProvider,
+  type ResolvedProvider,
 } from '@friday/ai';
 import { getDb, platformRepository } from '@friday/db';
 import { logger } from '@friday/observability';
@@ -11,34 +11,82 @@ import { logger } from '@friday/observability';
  * The AI composition root.
  *
  * `packages/ai` declares agents against the `ModelProvider` interface; this is
- * the one place that decides which implementation they get. Without an API key
- * the app runs on the fixture provider — the deterministic core loop is
- * unaffected either way (NFR-2.2), which is the whole point of A6.
+ * the one place that decides which implementation they get — and it decides it
+ * from configuration, never from code. Switching Anthropic ↔ Gemini is an
+ * environment variable (ADR-012).
+ *
+ * With no key configured the app runs on fixtures. The deterministic core loop
+ * is unaffected either way (NFR-2.2), which is the whole point of A6.
  */
 
-let cached: ModelProvider | undefined;
+let cached: ResolvedProvider | undefined;
+let overridden: ModelProvider | undefined;
 
-export function getModelProvider(): ModelProvider {
+function resolve(): ResolvedProvider {
   if (cached) return cached;
 
-  const apiKey = process.env['ANTHROPIC_API_KEY'];
-  if (!apiKey) {
-    logger.warn('ANTHROPIC_API_KEY is not set — AI features run on the fixture provider.');
-    cached = createFixtureProvider();
-    return cached;
+  cached = resolveProvider({
+    AI_PROVIDER: process.env['AI_PROVIDER'],
+    ANTHROPIC_API_KEY: process.env['ANTHROPIC_API_KEY'],
+    GOOGLE_API_KEY: process.env['GOOGLE_API_KEY'],
+    GEMINI_MODEL: process.env['GEMINI_MODEL'],
+  });
+
+  if (cached.isFixture) {
+    logger.warn('No AI provider key configured — AI features run on the fixture provider.', {
+      reason: cached.reason,
+    });
+  } else {
+    logger.info('AI provider selected', { provider: cached.name, reason: cached.reason });
   }
 
-  cached = createAnthropicProvider({ apiKey });
   return cached;
+}
+
+export function getModelProvider(): ModelProvider {
+  return overridden ?? resolve().provider;
+}
+
+/** Which vendor is live — surfaced in the validation harness and in logs. */
+export function getProviderName(): string {
+  return overridden ? 'override' : resolve().name;
+}
+
+/**
+ * The vendor to price a call against.
+ *
+ * Gemini list prices are roughly an order of magnitude below Claude's, so
+ * costing one at the other's rates misstates spend badly enough to trip the
+ * per-user budget ceiling at the wrong time (§5.3 control 4).
+ */
+export function pricedProviderName(): 'anthropic' | 'google' {
+  try {
+    return overridden ? 'anthropic' : resolve().name === 'google' ? 'google' : 'anthropic';
+  } catch {
+    return 'anthropic';
+  }
 }
 
 /** Test seam: lets a suite install a scripted provider without touching env. */
 export function setModelProvider(provider: ModelProvider | undefined): void {
-  cached = provider;
+  overridden = provider;
+  if (provider === undefined) cached = undefined;
 }
 
+/**
+ * Whether a *live* vendor is configured. Drives the honest 503 on surfaces that
+ * have no deterministic equivalent — there is no non-AI version of a
+ * conversation.
+ */
 export function isAiConfigured(): boolean {
-  return Boolean(process.env['ANTHROPIC_API_KEY']);
+  if (overridden) return true;
+  try {
+    return !resolve().isFixture;
+  } catch {
+    // A malformed AI_PROVIDER is a misconfiguration, not an outage. Report it
+    // as "not configured" so the caller degrades rather than 500s.
+    return false;
+  }
 }
 
 function currentPeriod(now = new Date()): string {

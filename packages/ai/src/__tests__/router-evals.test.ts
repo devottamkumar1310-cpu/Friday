@@ -250,3 +250,32 @@ describe('evals — suite gating (§5.8)', () => {
     expect(runSuite('questions', cases, scoreQuestionQuality).gateMet).toBe(false);
   });
 });
+
+describe('router — provider-aware pricing (added after live validation)', () => {
+  it('prices Gemini well below Claude for the same usage', () => {
+    const usage = { inputTokens: 10_000, outputTokens: 1_000, cachedTokens: 0 };
+    const claude = estimateCostUsd('balanced', usage, 'anthropic');
+    const gemini = estimateCostUsd('balanced', usage, 'google');
+    expect(gemini).toBeLessThan(claude);
+    // Costing Gemini at Claude rates overstated spend ~10x during validation,
+    // which would trip the budget ceiling far too early.
+    expect(claude / gemini).toBeGreaterThan(5);
+  });
+
+  it('defaults to Anthropic pricing when the provider is unstated', () => {
+    const usage = { inputTokens: 1_000, outputTokens: 100, cachedTokens: 0 };
+    expect(estimateCostUsd('balanced', usage)).toBe(
+      estimateCostUsd('balanced', usage, 'anthropic'),
+    );
+  });
+
+  it('keeps tier ordering within Gemini pricing', () => {
+    const usage = { inputTokens: 10_000, outputTokens: 1_000, cachedTokens: 0 };
+    expect(estimateCostUsd('cheap', usage, 'google')).toBeLessThan(
+      estimateCostUsd('balanced', usage, 'google'),
+    );
+    expect(estimateCostUsd('balanced', usage, 'google')).toBeLessThan(
+      estimateCostUsd('deep', usage, 'google'),
+    );
+  });
+});

@@ -20,7 +20,7 @@ import {
   type UserRow,
 } from '@friday/db';
 import { logger } from '@friday/observability';
-import { getModelProvider, recordAiCall } from '../ai/provider';
+import { getModelProvider, pricedProviderName, recordAiCall } from '../ai/provider';
 import { toCoreMasteryState, toCoreMemoryState } from '../shared/mappers';
 
 /**
@@ -180,7 +180,7 @@ async function generateAndStore(
       promptVersion: result.promptVersion,
       status: result.rejected.length > 0 ? 'repaired' : 'ok',
       usage: result.usage,
-      costUsd: estimateCostUsd(tierFor('content_generator'), result.usage),
+      costUsd: estimateCostUsd(tierFor('content_generator'), result.usage, pricedProviderName()),
       latencyMs: Date.now() - startedAt,
     });
 

@@ -38,6 +38,22 @@ const PRICE_PER_MTOK: Record<ModelTier, { input: number; output: number }> = {
   cheap: { input: 0.8, output: 4 },
 };
 
+/**
+ * Gemini list prices, roughly an order of magnitude below Claude's.
+ *
+ * Added after live validation, where costing Gemini calls at Claude rates
+ * overstated spend by ~10x. A budget ceiling computed from the wrong vendor's
+ * prices would degrade a learner's model tier long before it needed to
+ * (§5.3 control 4), so the estimate has to know which vendor it is pricing.
+ */
+const GEMINI_PRICE_PER_MTOK: Record<ModelTier, { input: number; output: number }> = {
+  deep: { input: 1.25, output: 10 },
+  balanced: { input: 0.3, output: 2.5 },
+  cheap: { input: 0.1, output: 0.4 },
+};
+
+export type PricedProvider = 'anthropic' | 'google';
+
 export function tierFor(agent: AgentName): ModelTier {
   return AGENT_TIER[agent];
 }
@@ -59,8 +75,9 @@ export function degradeTier(tier: ModelTier): ModelTier {
 export function estimateCostUsd(
   tier: ModelTier,
   usage: { inputTokens: number; outputTokens: number; cachedTokens?: number },
+  provider: PricedProvider = 'anthropic',
 ): number {
-  const price = PRICE_PER_MTOK[tier];
+  const price = provider === 'google' ? GEMINI_PRICE_PER_MTOK[tier] : PRICE_PER_MTOK[tier];
   // Cached input tokens are billed at a large discount; 0.1x is the right order
   // of magnitude and keeps the estimate honest rather than flattering.
   const cached = usage.cachedTokens ?? 0;

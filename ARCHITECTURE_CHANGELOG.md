@@ -308,6 +308,42 @@ Full detail: [PHASE_2_REPORT.md](PHASE_2_REPORT.md).
 
 ---
 
+### CR-005 · Google Gemini as a first-class provider
+
+**Status:** accepted · **Raised:** post-Phase-2, on receipt of a Gemini API key · **Type:** new external dependency
+
+**Problem.** Phase 2 shipped three agents that had never executed against a live model, because no Anthropic key was available. That is the largest risk the project carries (PHASE_2_HANDOFF §6.1). A Gemini key became available.
+
+**Why this is not a redesign.** SYSTEM_ARCHITECTURE §2.1 already names the outcome: _"OpenAI / Gemini kept behind the provider interface as failover"_, and ADR-012 anticipates provider failover. Phase 2's `ModelProvider` seam (CR-004 §1) exists precisely for this. Adding Gemini is the seam being used as designed, not bent.
+
+**Change.**
+
+| Item           | Detail                                                                                                                                                           |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| New dependency | `@ai-sdk/google@^2.0` — the Vercel AI SDK's Google provider, matching the `ai@^5` major already pinned for Anthropic                                             |
+| New file       | `packages/ai/src/provider/google.ts` — mirrors `anthropic.ts` structure so the two diff cleanly                                                                  |
+| New file       | `packages/ai/src/provider/select.ts` — resolves the provider from configuration                                                                                  |
+| Config         | `AI_PROVIDER` (`anthropic` \| `google` \| `fixture`), `GOOGLE_API_KEY`, optional `GEMINI_MODEL`                                                                  |
+| Changed        | `apps/web/src/modules/ai/provider.ts` now delegates to `resolveProvider`; `assertCoachAvailable` asks the composition root instead of reading a vendor's env var |
+
+**Zero application-level change.** No agent, service, route, contract, or UI file was modified to support a second vendor. That was the requirement, and it is the property the seam bought.
+
+**Selection semantics.** An explicit `AI_PROVIDER` always wins, and a named provider without its key is a **hard error** rather than a silent fallback — a deployment that asks for Gemini and quietly gets Anthropic is a worse outcome than a startup failure, because nobody finds out. With no explicit choice, resolution infers from whichever key is present, preferring Anthropic as §2.1's primary. With no key at all, fixtures.
+
+**Model mapping.** The router speaks in tiers and Claude ids (§5.3's table is written in Claude names). Teaching it about vendors would put model selection in two places and break "routing is a policy, in one place", so the **provider translates at its own edge**: `deep → gemini-pro-latest`, `balanced → gemini-flash-latest`, `cheap → gemini-flash-lite-latest`.
+
+The `-latest` aliases are deliberate. Google retires dated model ids for new keys — `gemini-2.5-flash` returned _"no longer available to new users"_ during validation, so a pinned id that works at write time fails months later. `GEMINI_MODEL` pins one explicitly where reproducibility matters more than currency.
+
+**On "the official Google Generative AI SDK".** The request named that package; `@ai-sdk/google` was used instead. It calls the same Google API, but goes through the AI SDK abstraction the architecture already standardises on (§2.1), which means structured output, streaming, and tool-calling come from the same `generateObject`/`streamText` primitives as Anthropic. Using `@google/genai` directly would have meant hand-writing schema coercion, stream adaptation, and tool-schema conversion — more code, more divergence between providers, and no benefit. Flagged here rather than silently substituted; say the word if the direct SDK is required.
+
+**Invariants affected:** none. DP1 still holds — Gemini decides nothing; it decomposes, generates, and converses, and every number remains `packages/core`'s.
+
+**Documents updated:** `.env.example`. §2.1's stack table already anticipated this and needs no edit.
+
+**Validated live.** See [AI_VALIDATION_REPORT.md](AI_VALIDATION_REPORT.md).
+
+---
+
 ---
 
 ## Baseline History

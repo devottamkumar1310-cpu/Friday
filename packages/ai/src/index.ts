@@ -29,6 +29,8 @@ export * from './tools/types';
 export * from './tools/read-tools';
 export * from './provider/fixture';
 export * from './provider/anthropic';
+export * from './provider/google';
+export * from './provider/select';
 export * from './agents/curriculum-architect';
 export * from './agents/content-generator';
 export * from './agents/coach';

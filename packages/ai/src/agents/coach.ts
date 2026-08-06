@@ -74,6 +74,10 @@ export async function* runCoachTurn(input: CoachTurnInput): AsyncIterable<CoachE
   const modelId = modelIdFor('coach');
   const tier = tierFor('coach');
   const budget = new ToolCallBudget();
+  // Price against the vendor actually serving the turn — costing Gemini at
+  // Claude rates would trip the budget ceiling ~10x too early (§5.3 control 4).
+  const pricedProvider =
+    input.provider.id === 'google' ? ('google' as const) : ('anthropic' as const);
   let usage: TokenUsage = { ...ZERO_USAGE };
 
   yield { type: 'start', messageId: input.messageId, model: modelId };
@@ -184,7 +188,7 @@ export async function* runCoachTurn(input: CoachTurnInput): AsyncIterable<CoachE
       type: 'done',
       messageId: input.messageId,
       usage,
-      costUsd: estimateCostUsd(tier, usage),
+      costUsd: estimateCostUsd(tier, usage, pricedProvider),
     };
   } catch (error) {
     // E-16 / NFR-2.2: the Coach going down must not take the core loop with it.
