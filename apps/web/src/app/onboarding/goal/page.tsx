@@ -18,7 +18,7 @@ export default async function GoalPage() {
   // A goal without availability cannot be planned (E-6), so collect capacity
   // first rather than failing at the end of a form they already filled in.
   const availability = await getAvailability(user);
-  if (availability.rules.length === 0) redirect('/onboarding/availability?next=goal');
+  if (availability.rules.length === 0) redirect('/onboarding/availability');
 
   // Already has a goal — nothing to do here.
   const goals = await listGoals(user);

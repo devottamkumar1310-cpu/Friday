@@ -16,6 +16,7 @@ import {
   type UserRow,
 } from '@friday/db';
 import { logger } from '@friday/observability';
+import { EVENTS, trackEvent } from '../platform/analytics.service';
 
 /**
  * Sessions and the evidence -> mastery/retention update — SYSTEM_ARCHITECTURE
@@ -48,13 +49,20 @@ export async function startSession(
     if (!task) throw ApiError.notFound();
   }
 
-  return executionRepository(db).createSession({
+  const session = await executionRepository(db).createSession({
     userId: user.id,
     goalId: input.goalId,
     taskId: input.taskId ?? null,
     status: 'active',
     originatedFrom: input.originatedFrom,
   });
+
+  // Paired with `session.completed`: the ratio between them is how many
+  // sessions get started and never finished, which is the number that says
+  // whether the study screen works.
+  trackEvent(user.id, EVENTS.sessionStarted, { originatedFrom: input.originatedFrom });
+
+  return session;
 }
 
 export interface CompleteSessionResult {
@@ -217,6 +225,10 @@ export async function completeSession(
   });
 
   logger.info('session completed', { sessionId, conceptsUpdated: input.ratings.length });
+  trackEvent(user.id, EVENTS.sessionCompleted, {
+    activeMinutes: input.activeMinutes,
+    conceptsRated: input.ratings.length,
+  });
   return result;
 }
 
@@ -224,6 +236,7 @@ export async function abandonSession(user: UserRow, sessionId: string): Promise<
   const session = await executionRepository(getDb()).findSession(user.id, sessionId);
   if (!session) throw ApiError.notFound();
   await executionRepository(getDb()).abandonSession(user.id, sessionId);
+  trackEvent(user.id, EVENTS.sessionAbandoned);
 }
 
 /** Session history for the UI — API_SPECIFICATION §5.6. */

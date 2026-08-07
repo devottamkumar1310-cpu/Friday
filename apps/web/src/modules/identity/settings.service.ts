@@ -12,6 +12,7 @@ import {
   type UserRow,
 } from '@friday/db';
 import { logger } from '@friday/observability';
+import { EVENTS, trackEvent } from '../platform/analytics.service';
 
 /**
  * Availability and preferences — API_SPECIFICATION §5.1.
@@ -91,6 +92,10 @@ export async function setAvailability(user: UserRow, input: SetAvailabilityReque
   );
 
   logger.info('availability updated', { ruleCount: input.rules.length });
+  trackEvent(user.id, EVENTS.availabilitySet, {
+    ruleCount: input.rules.length,
+    weeklyMinutes: weeklyMinutes(input.rules),
+  });
 
   // §10.1 classes this as a Constraint trigger → re-plan. M0 ships manual
   // triggers only (§1.1), so the caller regenerates explicitly; the UI does

@@ -23,6 +23,7 @@ import {
 } from '@friday/db';
 import { logger } from '@friday/observability';
 import { generateInitialPlan } from '../planning/planning.service';
+import { EVENTS, trackEvent } from '../platform/analytics.service';
 
 /**
  * The knowledge graph — curriculum model, concepts, prerequisites
@@ -203,6 +204,10 @@ export async function createGoal(user: UserRow, input: CreateGoalRequest) {
   await generateInitialPlan(user, goal);
 
   logger.info('goal created', { goalId: goal.id, templateSlug: input.templateSlug });
+  trackEvent(user.id, EVENTS.goalCreated, {
+    templateSlug: input.templateSlug,
+    conceptCount: curriculum.totalConcepts,
+  });
   return { goal, curriculum };
 }
 

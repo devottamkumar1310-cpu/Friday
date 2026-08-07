@@ -35,7 +35,7 @@ export default async function DashboardPage() {
 
   // A learner with no goal has nothing to see here — send them to build one
   // rather than showing an empty shell they have to work out how to escape.
-  if (!goal) redirect('/onboarding/availability?next=goal');
+  if (!goal) redirect('/onboarding/availability');
 
   const mission = await getMissionControl(user, goal.id);
   const { action, why } = mission.nextAction;

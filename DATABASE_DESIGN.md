@@ -1,7 +1,7 @@
 # FRIDAY — Database Design
 
 > **Status:** Pre-Production · Source of Truth
-> **Version:** 1.3 · Blueprint v1.5
+> **Version:** 1.3 · Blueprint v1.6
 > **Engine:** PostgreSQL 16+ · ORM: Drizzle
 > **Extensions:** `citext` from Phase 0 · `pgvector` from Phase 3 (see §1.1 / D11)
 > **Depends on:** [SYSTEM_ARCHITECTURE.md](SYSTEM_ARCHITECTURE.md)

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { captureException } from '@sentry/nextjs';
 import { ErrorState } from '@friday/ui';
 
 /**
@@ -11,8 +12,10 @@ import { ErrorState } from '@friday/ui';
  * report without it.
  *
  * No `@friday/observability` import: it is a server-side package
- * (`AsyncLocalStorage`) and would break the client bundle. Sentry's Next.js
- * client instrumentation already captures errors that reach a boundary.
+ * (`AsyncLocalStorage`), and importing it here broke the production build in
+ * Phase 3 while passing both typecheck and lint. Reporting goes straight to
+ * Sentry instead, which is configured in `instrumentation-client.ts` and is a
+ * no-op when no DSN is set.
  */
 export default function AppError({
   error,
@@ -22,8 +25,10 @@ export default function AppError({
   reset: () => void;
 }) {
   useEffect(() => {
-    // eslint-disable-next-line no-console -- client boundary; the structured logger is server-only
-    console.error('Route error', error.digest ?? '', error);
+    // Reported explicitly rather than relying on the boundary being observed:
+    // an error a learner sees and nobody records is the failure mode this
+    // phase exists to remove.
+    captureException(error, { tags: { boundary: 'app', digest: error.digest ?? 'none' } });
   }, [error]);
 
   return (

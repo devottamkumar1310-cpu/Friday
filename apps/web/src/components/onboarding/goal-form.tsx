@@ -74,7 +74,7 @@ export function GoalForm({ templates }: { templates: TemplateOption[] }) {
         case ERROR_CODES.NO_AVAILABILITY_DEFINED:
           // The scheduler cannot invent capacity (E-6). Send them to fix it
           // rather than failing with an error they cannot act on.
-          router.push('/onboarding/availability?next=goal');
+          router.push('/onboarding/availability');
           break;
         case ERROR_CODES.TEMPLATE_NOT_FOUND:
           setError('templateSlug', { message: 'That curriculum is no longer available.' });
@@ -178,7 +178,18 @@ export function GoalForm({ templates }: { templates: TemplateOption[] }) {
         error={errors.selfReportedLevel?.message}
         hint="A starting guess only. FRIDAY corrects it from evidence as soon as you study."
       >
-        <Select id="selfReportedLevel" {...register('selfReportedLevel')}>
+        {/*
+          "Prefer not to say" is the default, and a native select reports it as
+          `""` — which is not a member of the enum and not `undefined` either,
+          so the form failed validation before it could ever be submitted. The
+          field is optional in the contract; absent has to mean absent.
+        */}
+        <Select
+          id="selfReportedLevel"
+          {...register('selfReportedLevel', {
+            setValueAs: (v: string) => (v === '' ? undefined : v),
+          })}
+        >
           <option value="">Prefer not to say</option>
           <option value="beginner">Beginner</option>
           <option value="intermediate">Intermediate</option>

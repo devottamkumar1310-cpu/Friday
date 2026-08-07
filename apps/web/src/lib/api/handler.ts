@@ -175,39 +175,7 @@ export function sseRoute<TSchema extends z.ZodTypeAny | undefined = undefined>(c
             session: resolved.session,
           } as AuthedContext<TSchema extends z.ZodTypeAny ? z.infer<TSchema> : undefined>);
 
-          const encoder = new TextEncoder();
-          const stream = new ReadableStream<Uint8Array>({
-            async start(controller) {
-              try {
-                for await (const { event, data } of iterator) {
-                  controller.enqueue(
-                    encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
-                  );
-                }
-              } catch (error) {
-                // Once the stream is open the status line is spent, so a
-                // failure is delivered as an event. Preserve the real code
-                // where we have one — "AI_UNAVAILABLE" is actionable,
-                // "INTERNAL_ERROR" is not.
-                if (!isApiError(error)) captureException({ error, context: { requestId } });
-                const apiError = isApiError(error)
-                  ? error
-                  : new ApiError(ERROR_CODES.INTERNAL_ERROR, 'The stream ended unexpectedly.');
-                controller.enqueue(
-                  encoder.encode(
-                    `event: error\ndata: ${JSON.stringify({
-                      code: apiError.code,
-                      message: apiError.message,
-                    })}\n\n`,
-                  ),
-                );
-              } finally {
-                controller.close();
-              }
-            },
-          });
-
-          return new NextResponse(stream, {
+          return new NextResponse(sseStream(iterator, requestId), {
             status: 200,
             headers: {
               'Content-Type': 'text/event-stream; charset=utf-8',
@@ -225,6 +193,73 @@ export function sseRoute<TSchema extends z.ZodTypeAny | undefined = undefined>(c
       },
     );
   };
+}
+
+/**
+ * Wraps an event iterable as an SSE body.
+ *
+ * Separate from `sseRoute` so the controller lifecycle can be tested directly.
+ * That lifecycle is subtler than it looks: a learner who closes the tab, hits
+ * back, or loses signal mid-answer **cancels** the stream, after which both
+ * `enqueue` and `close` throw "Invalid state: Controller is already closed".
+ * Left unguarded that surfaces as an unhandled exception and reaches the error
+ * reporter as though it were an incident — when it is the most ordinary thing a
+ * reader can do. Launch-readiness verification caught it on a real disconnect.
+ *
+ * Keeping routine disconnects out of the incident stream is what makes the
+ * incident stream worth reading.
+ */
+export function sseStream(
+  iterator: AsyncIterable<{ event: string; data: unknown }>,
+  requestId: string,
+): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  let open = true;
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: string, data: unknown): void => {
+        if (!open) return;
+        try {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          // Cancelled between the check and the write. There is no longer
+          // anyone to tell.
+          open = false;
+        }
+      };
+
+      try {
+        for await (const { event, data } of iterator) {
+          if (!open) break; // Stop doing work nobody is waiting for.
+          send(event, data);
+        }
+      } catch (error) {
+        // Once the stream is open the status line is spent, so a failure is
+        // delivered as an event. Preserve the real code where we have one —
+        // "AI_UNAVAILABLE" is actionable, "INTERNAL_ERROR" is not.
+        if (open && !isApiError(error)) {
+          captureException({ error, context: { requestId } });
+        }
+        const apiError = isApiError(error)
+          ? error
+          : new ApiError(ERROR_CODES.INTERNAL_ERROR, 'The stream ended unexpectedly.');
+        send('error', { code: apiError.code, message: apiError.message });
+      } finally {
+        if (open) {
+          open = false;
+          try {
+            controller.close();
+          } catch {
+            // Already closed by cancellation; the response is over.
+          }
+        }
+      }
+    },
+    cancel() {
+      open = false;
+    },
+  });
 }
 
 function createHandler(

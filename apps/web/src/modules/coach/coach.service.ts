@@ -18,6 +18,7 @@ import {
   type UserRow,
 } from '@friday/db';
 import { logger } from '@friday/observability';
+import { EVENTS, trackEvent } from '../platform/analytics.service';
 import { buildLearnerContext } from '../ai/context-builder';
 import { buildCoachExecutors } from '../ai/tool-executors';
 import {
@@ -69,6 +70,30 @@ export async function archiveThread(user: UserRow, threadId: string): Promise<vo
   const thread = await coachRepository(getDb()).findThread(user.id, threadId);
   if (!thread) throw ApiError.notFound();
   await coachRepository(getDb()).archiveThread(user.id, threadId);
+}
+
+/**
+ * Confirms the thread exists **and belongs to the caller**, before the stream
+ * opens.
+ *
+ * `sendMessage` already scopes its lookup by user id, so an outsider could
+ * never write into someone else's thread. The problem was where that check ran:
+ * inside an async generator, whose body does not execute until the first
+ * `next()` — by which point the 200 and the headers have gone out. An
+ * authorization failure was therefore reported as a *successful* response
+ * carrying an error event.
+ *
+ * Nothing leaked and nothing was written, but the status code is not cosmetic:
+ * rate limiters, WAFs, and alerting are all keyed on 4xx, and every one of them
+ * saw those attempts succeed. This is the same shape as the Phase 2 defect that
+ * moved `assertCoachAvailable` out of the generator — the availability check was
+ * hoisted then, and the authorization check was left behind.
+ */
+export async function assertThreadOwned(user: UserRow, threadId: string): Promise<void> {
+  const thread = await coachRepository(getDb()).findThread(user.id, threadId);
+  // Not found rather than forbidden: "you may not read this" still confirms it
+  // exists.
+  if (!thread) throw ApiError.notFound();
 }
 
 export interface SendMessageInput {
@@ -181,6 +206,12 @@ export async function* sendMessage(
     status,
     toolCalls: toolCalls.length,
     outputTokens: finalUsage.outputTokens,
+  });
+
+  trackEvent(user.id, EVENTS.coachTurn, {
+    status,
+    toolCalls: toolCalls.length,
+    outputTokens: finalUsage.outputTokens ?? 0,
   });
 }
 

@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@friday/core": "workspace:*",
-    "drizzle-orm": "^0.38.3",
+    "drizzle-orm": "^0.45.2",
     "pg": "^8.13.1",
     "uuid": "^11.0.5"
   },
@@ -30,10 +30,10 @@
     "@types/node": "^22.10.5",
     "@types/pg": "^8.11.10",
     "dotenv": "^16.4.7",
-    "drizzle-kit": "^0.30.1",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9.17.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vitest": "^3.2.7"
   }
 }

@@ -1,6 +1,10 @@
 import { SendCoachMessageRequestSchema } from '@friday/contracts';
 import { requireParam, sseRoute } from '@/lib/api/handler';
-import { assertCoachAvailable, sendMessage } from '@/modules/coach/coach.service';
+import {
+  assertCoachAvailable,
+  assertThreadOwned,
+  sendMessage,
+} from '@/modules/coach/coach.service';
 
 export const runtime = 'nodejs';
 
@@ -14,11 +18,19 @@ export const runtime = 'nodejs';
 export const POST = sseRoute({
   body: SendCoachMessageRequestSchema,
   handler: async ({ user, params, body, requestId }) => {
-    // Checked here, in the async function body rather than inside the generator
-    // below — so an unconfigured environment gets a real 503 with an honest
-    // message, instead of a 200 whose first event is an error.
+    // Both checks run here, in the async function body rather than inside the
+    // generator below. A generator body does not execute until its first
+    // `next()`, which is after the 200 and the headers have gone out — so
+    // anything checked in there is reported as a successful response carrying
+    // an error event.
+    //
+    // Availability was hoisted in Phase 2. Ownership was not, and browser
+    // verification found the consequence: posting into another learner's thread
+    // answered 200. Nothing was written and nothing leaked, but every rate
+    // limiter and alert keyed on 4xx saw those attempts succeed.
     assertCoachAvailable();
     const threadId = requireParam(params, 'threadId');
+    await assertThreadOwned(user, threadId);
 
     async function* stream() {
       for await (const event of sendMessage(user, {

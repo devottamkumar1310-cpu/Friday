@@ -32,6 +32,11 @@ import {
 } from './schemas/planning';
 import { NextActionResponseSchema, SkipActionRequestSchema } from './schemas/next-action';
 import {
+  FeedbackListResponseSchema,
+  SubmitFeedbackRequestSchema,
+  SubmitFeedbackResponseSchema,
+} from './schemas/feedback';
+import {
   CompleteSessionRequestSchema,
   CompleteSessionResponseSchema,
   StartSessionRequestSchema,
@@ -386,6 +391,25 @@ export const ENDPOINTS = {
     tags: ['Assessment'],
     auth: true,
     response: SubmitAttemptResponseSchema,
+    status: 200,
+  },
+  submitFeedback: {
+    method: 'POST',
+    path: '/feedback',
+    summary: 'Send feedback about the product (CR-007, the private-beta channel)',
+    tags: ['Platform'],
+    auth: true,
+    body: SubmitFeedbackRequestSchema,
+    response: SubmitFeedbackResponseSchema,
+    status: 201,
+  },
+  listOwnFeedback: {
+    method: 'GET',
+    path: '/feedback',
+    summary: 'What this learner has already sent',
+    tags: ['Platform'],
+    auth: true,
+    response: FeedbackListResponseSchema,
     status: 200,
   },
   reportQuestion: {

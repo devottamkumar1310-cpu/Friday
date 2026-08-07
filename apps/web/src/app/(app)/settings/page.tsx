@@ -4,6 +4,7 @@ import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle } fro
 import { requireUser } from '@/lib/auth/server';
 import { getAvailability, getPreferences } from '@/modules/identity/settings.service';
 import { ProfileForm } from '@/components/settings/profile-form';
+import { FeedbackForm } from '@/components/platform/feedback-form';
 import { PreferencesForm } from '@/components/settings/preferences-form';
 
 export const metadata: Metadata = { title: 'Settings' };
@@ -98,6 +99,19 @@ export default async function SettingsPage() {
             maxDirectivesPerDay={preferences.maxDirectivesPerDay}
             theme={preferences.theme}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Tell us what is wrong</CardTitle>
+          <CardDescription>
+            FRIDAY is in beta. Someone reads every message during it, and the things people report
+            here are what gets fixed first.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <FeedbackForm />
         </CardContent>
       </Card>
 

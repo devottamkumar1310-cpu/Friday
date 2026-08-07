@@ -9,3 +9,4 @@ export * from './assessment';
 export * from './intelligence';
 export * from './coach';
 export * from './platform';
+export * from './product';

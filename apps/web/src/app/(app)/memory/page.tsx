@@ -18,7 +18,7 @@ export default async function MemoryPage() {
   const user = await requireOnboardedUser();
   const goals = await listGoals(user);
   const goal = goals.find((g) => g.status === 'active') ?? goals[0];
-  if (!goal) redirect('/onboarding/availability?next=goal');
+  if (!goal) redirect('/onboarding/availability');
 
   const [facts, mastery, due] = await Promise.all([
     listFacts(user),

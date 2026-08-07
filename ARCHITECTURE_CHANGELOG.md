@@ -373,6 +373,55 @@ Full detail: [PHASE_3_REPORT.md](PHASE_3_REPORT.md).
 
 ---
 
+## CR-007 — Launch-readiness surfaces: health, product telemetry, feedback
+
+**Status:** accepted · **Raised:** Launch Readiness phase · **Type:** additive
+
+**Problem.** The Launch Readiness objectives include error monitoring, analytics, and feedback collection. None had anywhere to go:
+
+- No health endpoint, so a load balancer could not tell a running process from a working one.
+- No client-side error reporting. Every browser exception — a hydration mismatch, a failed fetch, a component throwing into an error boundary — was invisible.
+- No product-event storage, so the four questions a launch has to answer (do learners finish onboarding, does the loop close, do they return, is the Coach used) were unanswerable.
+- No feedback channel, though the roadmap's private-beta plan (§ release plan) calls for one with daily triage.
+
+**Change.** Migration `0005` adds two append-only tables, `product_events` and `feedback`. Nothing existing is altered; neither table is read on any request path, so neither can affect the learning loop. Plus: `GET /api/health`, `POST|GET /api/v1/feedback`, boot-time environment validation, a nonce-based Content-Security-Policy, HSTS, and browser-side Sentry.
+
+**Why not PostHog.** SYSTEM_ARCHITECTURE §2 names PostHog for product analytics and it remains the intended destination. It is not what ships at launch. PostHog is a third-party browser script that sets identifiers, and FRIDAY's learners are mostly 16–18, where India's DPDP Act requires verifiable guardian consent (FR-1.6). Shipping client-side tracking before the consent surface that would govern it exists is the wrong order. Events are therefore recorded **server-side** from actions the learner has already taken, carry no device or browser identity, and can be exported later — the seam is `recordEvent`, not the storage.
+
+**Endpoints added:**
+
+| Endpoint                | Auth | Purpose                                                                                                                                                                                  |
+| ----------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/health`       | no   | Liveness plus a real database round trip. 503 when a dependency is down. Outside `/api/v1` deliberately: that prefix is the versioned learner contract, this is an operational endpoint. |
+| `POST /api/v1/feedback` | yes  | The private beta's feedback channel                                                                                                                                                      |
+| `GET /api/v1/feedback`  | yes  | A learner's own submissions                                                                                                                                                              |
+
+**Invariants affected:** none. No engine, agent, or AI-architecture change. **Breaking:** no.
+
+**Documents updated:** `.env.example` gains `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_ENVIRONMENT`, `GIT_COMMIT_SHA`. `DEPLOYMENT.md` added.
+
+Full detail: [LAUNCH_READINESS_REPORT.md](LAUNCH_READINESS_REPORT.md).
+
+---
+
+## CR-008 — Authorization hoisted out of the SSE generator
+
+**Status:** accepted · **Raised:** Launch Readiness verification · **Type:** defect fix
+
+**Problem.** `POST /coach/threads/{id}/messages` answered **200** when one learner posted into another learner's thread. The ownership check lives in `sendMessage`, which is an async generator; a generator body does not run until its first `next()`, which is after the status line and headers have been sent. The authorization failure was therefore delivered as an error _event_ inside a successful response.
+
+Nothing leaked and nothing was written — `findThread` is scoped by user id, so the write never happened. But a status code is not cosmetic: rate limiters, WAFs, and alerting are keyed on 4xx, and every one of them saw those attempts succeed.
+
+**This is the same defect shape as Phase 2's.** That one moved `assertCoachAvailable()` out of the generator so an unconfigured provider produced an honest 503. The availability check was hoisted; the authorization check was left behind. Found only because a live provider was configured — with the coach unavailable, the 503 masks it entirely.
+
+**Change.** `assertThreadOwned(user, threadId)` runs in the handler's async body alongside `assertCoachAvailable()`, before the stream opens. Returns 404, not 403: "you may not read this" still confirms it exists.
+
+**Invariants affected:** none. **Breaking:** no — the response for a legitimate caller is unchanged.
+
+---
+
+---
+
 ## Baseline History
 
 | Version | Date   | Summary                                                                                                                                                                                                                               |
@@ -382,4 +431,5 @@ Full detail: [PHASE_3_REPORT.md](PHASE_3_REPORT.md).
 | **1.2** | Week 1 | CR-002 applied: extensions travel with the schema that needs them (D11). Verified on a clean PostgreSQL without pgvector. **Superseded.**                                                                                             |
 | **1.3** | Week 2 | Phase 1 (The Spine) — the deterministic domain engine — complete and runtime-verified. CR-003 applied (`mastery_states` diversity/consistency columns). **Superseded.**                                                               |
 | **1.4** | Week 3 | Phase 2 (Intelligence Layer) — AI subsystem, Coach, practice loop, progress and weak-concept surfaces — complete and runtime-verified. CR-004 applied. Gemini added as a second provider and live-validated (CR-005). **Superseded.** |
-| **1.5** | Week 4 | Phase 3 — the user-facing application. Frontend completed, every backend capability connected to UI, production UX. CR-006 applied. **Frozen — Launch Candidate baseline.**                                                           |
+| **1.5** | Week 4 | Phase 3 — the user-facing application. Frontend completed, every backend capability connected to UI, production UX. CR-006 applied. **Superseded.**                                                                                   |
+| **1.6** | Week 5 | Launch Readiness — browser E2E, accessibility, responsive, live streaming, CI, deployment config, monitoring, analytics, feedback, performance, security. CR-007 and CR-008 applied. **Frozen — Launch Candidate baseline.**          |

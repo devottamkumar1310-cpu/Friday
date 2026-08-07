@@ -78,7 +78,7 @@ export function SignInForm() {
 
       <p className="text-center text-sm text-muted-foreground">
         New here?{' '}
-        <Link href="/sign-up" className="text-primary underline-offset-4 hover:underline">
+        <Link href="/sign-up" className="text-primary underline underline-offset-4">
           Create an account
         </Link>
       </p>

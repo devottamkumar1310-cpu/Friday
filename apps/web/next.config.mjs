@@ -33,6 +33,18 @@ const nextConfig = {
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           { key: 'X-Frame-Options', value: 'DENY' },
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+          // Two years, subdomains included. Browsers ignore it over plaintext,
+          // so it is inert in local development and active the moment the app
+          // is served over TLS. `preload` is deliberately omitted: submitting
+          // to the preload list is close to irreversible and is a decision for
+          // whoever owns the domain, not a default.
+          //
+          // Content-Security-Policy is *not* here — it carries a per-request
+          // nonce and is set in middleware.
+          {
+            key: 'Strict-Transport-Security',
+            value: 'max-age=63072000; includeSubDomains',
+          },
         ],
       },
     ];

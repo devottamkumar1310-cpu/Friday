@@ -13,10 +13,12 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Input,
   Spinner,
   toast,
 } from '@friday/ui';
 import { api } from '@/lib/api/client';
+import { inputModeFor } from './input-mode';
 
 /**
  * Practice runner — roadmap 2.8's flow, given a face.
@@ -52,6 +54,7 @@ export function PracticeRunner({
   const router = useRouter();
   const [index, setIndex] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
+  const [typed, setTyped] = useState('');
   const [graded, setGraded] = useState<Graded | null>(null);
   const [busy, setBusy] = useState(false);
   const [correctCount, setCorrectCount] = useState(0);
@@ -63,14 +66,19 @@ export function PracticeRunner({
 
   const question = questions[index];
   const isLast = index === questions.length - 1;
+  const mode = question ? inputModeFor(question) : 'unanswerable';
+  const hasAnswer = mode === 'choice' ? selected !== null : typed.trim().length > 0;
 
   async function submitAnswer() {
-    if (!question || selected === null) return;
+    if (!question || !hasAnswer) return;
     setBusy(true);
     try {
       const result = await api.call('submitResponse', {
         params: { attemptId },
-        body: { questionId: question.id, answer: { selected: [selected] } },
+        body: {
+          questionId: question.id,
+          answer: mode === 'choice' ? { selected: [selected as string] } : { value: typed.trim() },
+        },
       });
       setGraded(result.data as Graded);
       if (result.data.isCorrect) setCorrectCount((c) => c + 1);
@@ -85,6 +93,7 @@ export function PracticeRunner({
     if (!isLast) {
       setIndex((i) => i + 1);
       setSelected(null);
+      setTyped('');
       setGraded(null);
       return;
     }
@@ -190,7 +199,43 @@ export function PracticeRunner({
           <CardTitle className="text-base font-normal leading-relaxed">{question.stem}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <fieldset className="space-y-2" disabled={!!graded}>
+          {mode === 'value' && (
+            <div className="space-y-1.5">
+              <label htmlFor="practice-answer" className="text-sm font-medium">
+                Your answer
+              </label>
+              <Input
+                id="practice-answer"
+                // `inputMode` rather than `type="number"`, so a wrong keystroke
+                // is visible and correctable instead of being silently dropped.
+                inputMode={question.type === 'numeric' ? 'decimal' : 'text'}
+                autoComplete="off"
+                value={typed}
+                disabled={!!graded}
+                onChange={(e) => setTyped(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !graded && hasAnswer) {
+                    e.preventDefault();
+                    void submitAnswer();
+                  }
+                }}
+              />
+              {question.type === 'numeric' ? (
+                <p className="text-xs text-muted-foreground">
+                  A number. Units are not needed — the stem states them.
+                </p>
+              ) : null}
+            </div>
+          )}
+
+          {mode === 'unanswerable' && (
+            <Callout tone="warning" title="This question cannot be displayed">
+              It arrived in a format this screen does not know how to render. Skip it — it will not
+              count against you — and report it so it can be fixed.
+            </Callout>
+          )}
+
+          <fieldset className="space-y-2" disabled={!!graded} hidden={mode !== 'choice'}>
             <legend className="sr-only">Answer options</legend>
             {(question.options ?? []).map((option) => {
               const isChosen = selected === option.id;
@@ -234,13 +279,22 @@ export function PracticeRunner({
               tone={graded.isCorrect ? 'success' : 'warning'}
               title={graded.isCorrect ? 'Correct' : 'Not quite'}
             >
+              {/* A typed answer has no option to highlight, so the correct
+                  value has to be stated outright or the feedback is useless. */}
+              {mode === 'value' && !graded.isCorrect && graded.correctAnswer.value ? (
+                <p className="mb-1.5 font-medium">The answer is {graded.correctAnswer.value}.</p>
+              ) : null}
               {graded.explanation}
             </Callout>
           )}
 
           <div className="flex flex-wrap items-center gap-3">
-            {!graded ? (
-              <Button onClick={submitAnswer} disabled={selected === null || busy}>
+            {mode === 'unanswerable' ? (
+              <Button onClick={next} disabled={busy}>
+                {busy ? <Spinner label="Saving…" /> : isLast ? 'Finish' : 'Skip this question'}
+              </Button>
+            ) : !graded ? (
+              <Button onClick={submitAnswer} disabled={!hasAnswer || busy}>
                 {busy ? <Spinner label="Checking…" /> : 'Check answer'}
               </Button>
             ) : (

@@ -1,4 +1,5 @@
 import { logger, registerReporter } from '@friday/observability';
+import { inspectEnv } from './lib/env';
 
 /**
  * Runs once per server start (Next.js instrumentation hook).
@@ -9,6 +10,8 @@ import { logger, registerReporter } from '@friday/observability';
  * records to the structured log, so local development is never silent.
  */
 export function register(): void {
+  verifyEnvironment();
+
   const dsn = process.env['SENTRY_DSN'];
 
   if (!dsn) {
@@ -45,4 +48,30 @@ export function register(): void {
         error: error instanceof Error ? error.message : String(error),
       });
     });
+}
+
+/**
+ * Refuses to serve traffic on a misconfiguration that would be unsafe rather
+ * than merely broken — a missing signing secret, a placeholder database URL.
+ *
+ * Crashing at boot is the kind option. The alternative is an instance that
+ * accepts requests and fails them one learner at a time, which is harder to
+ * diagnose and, in the case of a forgeable `AUTH_SECRET`, quietly insecure.
+ */
+function verifyEnvironment(): void {
+  const problems = inspectEnv();
+  if (problems.length === 0) return;
+
+  for (const { variable, problem, fatal } of problems) {
+    const message = `configuration: ${variable} ${problem}`;
+    if (fatal) logger.error(message);
+    else logger.warn(message);
+  }
+
+  const fatal = problems.filter((p) => p.fatal);
+  if (fatal.length > 0) {
+    throw new Error(
+      `Refusing to start: ${fatal.map((p) => `${p.variable} ${p.problem}`).join('; ')}`,
+    );
+  }
 }

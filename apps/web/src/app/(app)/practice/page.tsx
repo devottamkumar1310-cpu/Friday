@@ -12,7 +12,7 @@ export default async function PracticePage() {
   const user = await requireOnboardedUser();
   const goals = await listGoals(user);
   const goal = goals.find((g) => g.status === 'active') ?? goals[0];
-  if (!goal) redirect('/onboarding/availability?next=goal');
+  if (!goal) redirect('/onboarding/availability');
 
   // Weak concepts first — practice is most valuable where the gap is, and
   // retrieval produces far stronger evidence than a self-rating (§5.2).

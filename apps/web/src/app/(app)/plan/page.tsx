@@ -40,7 +40,7 @@ export default async function PlanPage() {
   const user = await requireOnboardedUser();
   const goals = await listGoals(user);
   const goal = goals.find((g) => g.status === 'active') ?? goals[0];
-  if (!goal) redirect('/onboarding/availability?next=goal');
+  if (!goal) redirect('/onboarding/availability');
 
   let plan;
   let tasks;

@@ -11,7 +11,7 @@ export default async function CoachPage() {
   const user = await requireOnboardedUser();
   const goals = await listGoals(user);
   const goal = goals.find((g) => g.status === 'active') ?? goals[0];
-  if (!goal) redirect('/onboarding/availability?next=goal');
+  if (!goal) redirect('/onboarding/availability');
 
   // One rolling thread keeps the surface simple. Thread management (list,
   // rename, archive) has API support already and is a UI addition, not a

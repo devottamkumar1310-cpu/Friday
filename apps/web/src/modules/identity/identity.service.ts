@@ -21,6 +21,7 @@ import { classifyAge } from './age-policy';
 import { deriveOnboardingState } from './onboarding';
 import { hashPassword, verifyPassword } from './password';
 import { generateSessionToken, hashSessionToken, sessionExpiry } from './session';
+import { EVENTS, trackEvent } from '../platform/analytics.service';
 
 /**
  * Identity service — the use-case layer for accounts, sessions, and consent.
@@ -93,6 +94,7 @@ export async function signUp(input: SignUpRequest, meta: RequestMeta): Promise<A
 
   setContextUser(user.id);
   logger.info('account created', { isMinor: classification.isMinor });
+  trackEvent(user.id, EVENTS.signedUp, { isMinor: classification.isMinor });
 
   return issueSession(user, meta);
 }

@@ -11,3 +11,4 @@ export * from './coach';
 export * from './memory';
 export * from './me-settings';
 export * from './sessions';
+export * from './feedback';

@@ -8,12 +8,14 @@ Not a tutor. Not a planner. An intelligence that owns a student's academic state
 
 ---
 
-## Status: Blueprint v1.5 — **FROZEN** · Phase 3 (Launch Candidate) complete and runtime-verified
+## Status: Blueprint v1.6 — **FROZEN** · Launch Candidate, browser-verified
 
 The architecture has been designed, documented, reviewed, corrected, and frozen. **Architecture first, documentation second, code third.**
 
 - [DESIGN_REVIEW.md](DESIGN_REVIEW.md) — the pre-implementation technical design review (8 critical issues found)
 - [ARCHITECTURE_CHANGELOG.md](ARCHITECTURE_CHANGELOG.md) — how each was fixed, and **the change-request process that now governs this blueprint**
+- [LAUNCH_READINESS_REPORT.md](LAUNCH_READINESS_REPORT.md) — 95 browser tests, 9 defects found and fixed, and an objective launch verdict
+- [DEPLOYMENT.md](DEPLOYMENT.md) — the operational runbook
 
 > The blueprint is no longer edited in place. Changes to any table, endpoint, invariant, or the priority formula require a change request. See the changelog for what does and does not need one.
 

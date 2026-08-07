@@ -1,7 +1,7 @@
 # FRIDAY — Project Vision
 
 > **Status:** Pre-Production · Source of Truth
-> **Version:** 1.0 · Blueprint v1.5
+> **Version:** 1.0 · Blueprint v1.6
 > **Last updated:** Week 0 (pre-kickoff)
 
 ---

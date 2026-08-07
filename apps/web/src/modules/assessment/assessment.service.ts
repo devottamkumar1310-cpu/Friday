@@ -22,6 +22,7 @@ import {
 import { logger } from '@friday/observability';
 import { getModelProvider, pricedProviderName, recordAiCall } from '../ai/provider';
 import { toCoreMasteryState, toCoreMemoryState } from '../shared/mappers';
+import { EVENTS, trackEvent } from '../platform/analytics.service';
 
 /**
  * Assessment service — roadmap 2.7 (generation + cache + exposure) and 2.8
@@ -472,6 +473,11 @@ export async function submitAttempt(
 
     logger.info('attempt submitted', {
       attemptId,
+      score: correctCount,
+      concepts: conceptBreakdown.length,
+    });
+
+    trackEvent(user.id, EVENTS.practiceCompleted, {
       score: correctCount,
       concepts: conceptBreakdown.length,
     });
