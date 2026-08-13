@@ -420,6 +420,33 @@ Nothing leaked and nothing was written — `findThread` is scoped by user id, so
 
 ---
 
+## CR-009 — A superseded plan's work is retired with it
+
+**Status:** accepted · **Raised:** Phase 4 adaptive verification · **Type:** defect fix
+
+**Problem.** Re-planning added work instead of replacing it. `supersede` moved the plan row's status to `superseded` and stopped there, leaving that plan's tasks at `pending`. Every reader of outstanding work — `listPendingTasks` — filters on `status` and never on plan, so a learner saw the union of every plan version ever generated.
+
+Collapsing availability from a full week to a single hour made this visible in the worst possible direction: the workload **grew**, from 465 minutes to 555.
+
+| Plan | Status     | Pending tasks | Minutes |
+| ---- | ---------- | ------------- | ------- |
+| v1   | superseded | 10            | 465     |
+| v2   | active     | 2             | 90      |
+
+The scheduler was never at fault. It read the new availability correctly and produced a properly sized 90-minute plan; that plan was then stacked on top of the 465-minute one it was meant to replace. The defect compounded — every re-plan left another version's work behind — which is precisely the backlog this product exists to prevent.
+
+The blast radius was wider than the plan surfaces. `next-action.service` also reads `listPendingTasks`, so FRIDAY could direct a learner into a task belonging to a plan it had already abandoned.
+
+**Change.** `cancelPendingTasksForPlan(userId, planId)` retires the superseded plan's outstanding tasks to `cancelled`, inside the same transaction that supersedes the plan and creates its replacement — so no reader can observe both plans' tasks as pending at once.
+
+Only `pending` is retired. `in_progress` is deliberately excluded: completing a session is itself a re-plan trigger, so a re-plan can fire while a learner is mid-session, and cancelling that task underneath them would destroy work in progress. `completed`, `skipped` and `rescheduled` are history and are never touched — they are the evidence the engine learns from.
+
+**Invariants affected:** none — `cancelled` already existed in `task_status`, so no migration. **Breaking:** no.
+
+**Verified by:** `availability-replan.spec.ts` end to end (the file went from one failure and three tests unreachable to four passing), and `planning-repository.test.ts` for the filter itself, including the in-progress case a browser test cannot easily stage.
+
+---
+
 ---
 
 ## Baseline History

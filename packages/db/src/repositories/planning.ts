@@ -43,6 +43,37 @@ export function planningRepository(db: Executor) {
         .where(and(eq(plans.id, planId), eq(plans.userId, userId)));
     },
 
+    /**
+     * Retires the work a superseded plan was still asking for.
+     *
+     * `supersede` only moved the plan row's status, which left every one of its
+     * `pending` tasks visible to `listPendingTasks` — a query that filters on
+     * status and never on plan. The learner then saw the union of every plan
+     * version ever generated: collapsing availability from a full week to one
+     * hour grew the visible workload from 465 to 555 minutes, because the new
+     * 90-minute plan was *added to* the old 465-minute one rather than
+     * replacing it. That is the backlog this product exists to prevent, and it
+     * compounded on every re-plan.
+     *
+     * `in_progress` is deliberately excluded. A re-plan can fire while the
+     * learner is mid-session — completing a session is itself a trigger — and
+     * cancelling the task under a running session would destroy work the
+     * learner is doing right now. It stays, and its evidence lands normally.
+     *
+     * `completed`, `skipped` and `rescheduled` are history and are never
+     * touched: they are the evidence the engine learns from.
+     */
+    async cancelPendingTasksForPlan(userId: string, planId: string): Promise<number> {
+      const rows = await db
+        .update(tasks)
+        .set({ status: 'cancelled' })
+        .where(
+          and(eq(tasks.planId, planId), eq(tasks.userId, userId), eq(tasks.status, 'pending')),
+        )
+        .returning({ id: tasks.id });
+      return rows.length;
+    },
+
     async listVersions(userId: string, goalId: string): Promise<PlanRow[]> {
       return db
         .select()

@@ -227,7 +227,21 @@ async function persistPlan(
     const planning = planningRepository(tx);
 
     const activePlan = await planning.findActive(userId, goal.id);
-    if (activePlan) await planning.supersede(userId, activePlan.id);
+    if (activePlan) {
+      await planning.supersede(userId, activePlan.id);
+      // The superseded plan's outstanding work is retired in the same
+      // transaction that creates its replacement, so a reader can never
+      // observe both plans' tasks as pending at once (§10.4: the new plan
+      // *replaces* the old one; it does not stack on top of it).
+      const retired = await planning.cancelPendingTasksForPlan(userId, activePlan.id);
+      if (retired > 0) {
+        logger.info('retired superseded plan tasks', {
+          planId: activePlan.id,
+          version: activePlan.version,
+          retired,
+        });
+      }
+    }
 
     const plan = await planning.create({
       goalId: goal.id,
