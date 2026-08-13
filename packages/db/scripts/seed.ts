@@ -48,6 +48,49 @@ const MINOR_ID = '018f0000-0000-7000-8000-000000000002';
 
 const DEV_PASSWORD = 'friday-dev-password';
 
+/**
+ * Whether to create the demo accounts.
+ *
+ * The seed does two unrelated jobs. One is **reference data** — the canonical
+ * concept vocabulary, the JEE curriculum template, the golden question set —
+ * without which no learner can create a goal at all: the goal form has nothing
+ * to offer and says so. Production needs it.
+ *
+ * The other is two **demo accounts sharing a password that is hard-coded in
+ * this file**, and therefore public to anyone who can read the repository.
+ * Production must never have those.
+ *
+ * **The gate is the database host, not `NODE_ENV`.** The first version of this
+ * guard keyed on `NODE_ENV !== 'production'` — and then someone ran
+ * `pnpm db:seed` by hand against the live Neon URL, where `NODE_ENV` is simply
+ * unset, so the guard waved it through and put both backdoor accounts into
+ * production. A safety check that depends on remembering to set a variable is
+ * not a safety check.
+ *
+ * `DATABASE_URL` cannot be forgotten, because it is the thing being written to.
+ * If it does not point at localhost, this is not a development database and
+ * demo accounts are not created — whatever else the environment claims.
+ */
+function isLocalDatabase(url: string): boolean {
+  try {
+    const { hostname } = new URL(url);
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
+  } catch {
+    return false; // Unparseable: assume remote and stay safe.
+  }
+}
+
+const local = isLocalDatabase(connectionString);
+const seedDemoUsers =
+  process.env['SEED_DEMO_USERS'] === 'true' ||
+  (local && process.env['NODE_ENV'] !== 'production' && process.env['SEED_DEMO_USERS'] !== 'false');
+
+if (!local && process.env['SEED_DEMO_USERS'] === 'true') {
+  log('WARNING: creating demo accounts on a NON-LOCAL database because');
+  log('         SEED_DEMO_USERS=true was set explicitly. The password for');
+  log('         these accounts is public. Do not do this on production.');
+}
+
 const pool = new pg.Pool({
   connectionString,
   ...(connectionString.includes('localhost') ? {} : { ssl: { rejectUnauthorized: true } }),
@@ -55,72 +98,76 @@ const pool = new pg.Pool({
 const db = drizzle(pool);
 
 try {
-  // Argon2id (NFR-3.2). Verification reads cost parameters from the encoded
-  // hash, so a fixture created here verifies fine against the identity module.
-  const passwordHash = await hash(DEV_PASSWORD, { algorithm: 2 });
+  if (seedDemoUsers) {
+    // Argon2id (NFR-3.2). Verification reads cost parameters from the encoded
+    // hash, so a fixture created here verifies fine against the identity module.
+    const passwordHash = await hash(DEV_PASSWORD, { algorithm: 2 });
 
-  await db
-    .insert(users)
-    .values([
-      {
-        id: ADULT_ID,
-        email: 'demo@friday.app',
-        emailVerifiedAt: new Date(),
-        passwordHash,
-        displayName: 'Demo Learner',
-        timezone: 'Asia/Kolkata',
-        locale: 'en',
-        dateOfBirth: '1999-04-12',
-        isMinor: false,
-        onboardingState: { step: 'goal', completed: false },
-      },
-      {
-        // Exercises the FR-1.6 guardian-consent path, which is the common case
-        // for the launch segment rather than an edge case.
-        id: MINOR_ID,
-        email: 'minor@friday.app',
-        emailVerifiedAt: new Date(),
-        passwordHash,
-        displayName: 'Aarav',
-        timezone: 'Asia/Kolkata',
-        locale: 'en',
-        dateOfBirth: '2009-08-21',
-        isMinor: true,
-        onboardingState: { step: 'guardian_consent', completed: false },
-      },
-    ])
-    .onConflictDoNothing({ target: users.id });
+    await db
+      .insert(users)
+      .values([
+        {
+          id: ADULT_ID,
+          email: 'demo@friday.app',
+          emailVerifiedAt: new Date(),
+          passwordHash,
+          displayName: 'Demo Learner',
+          timezone: 'Asia/Kolkata',
+          locale: 'en',
+          dateOfBirth: '1999-04-12',
+          isMinor: false,
+          onboardingState: { step: 'goal', completed: false },
+        },
+        {
+          // Exercises the FR-1.6 guardian-consent path, which is the common case
+          // for the launch segment rather than an edge case.
+          id: MINOR_ID,
+          email: 'minor@friday.app',
+          emailVerifiedAt: new Date(),
+          passwordHash,
+          displayName: 'Aarav',
+          timezone: 'Asia/Kolkata',
+          locale: 'en',
+          dateOfBirth: '2009-08-21',
+          isMinor: true,
+          onboardingState: { step: 'guardian_consent', completed: false },
+        },
+      ])
+      .onConflictDoNothing({ target: users.id });
 
-  await db
-    .insert(userPreferences)
-    .values([{ userId: ADULT_ID }, { userId: MINOR_ID }])
-    .onConflictDoNothing();
+    await db
+      .insert(userPreferences)
+      .values([{ userId: ADULT_ID }, { userId: MINOR_ID }])
+      .onConflictDoNothing();
 
-  // Weekday evenings and weekend mornings — a realistic aspirant's week.
-  await db.delete(availabilityRules).where(eq(availabilityRules.userId, ADULT_ID));
-  await db.insert(availabilityRules).values([
-    ...[1, 2, 3, 4, 5].map((day) => ({
-      userId: ADULT_ID,
-      dayOfWeek: day,
-      startTime: '18:00',
-      endTime: '21:30',
-      kind: 'available',
-    })),
-    { userId: ADULT_ID, dayOfWeek: 6, startTime: '09:00', endTime: '13:00', kind: 'available' },
-    { userId: ADULT_ID, dayOfWeek: 0, startTime: '09:00', endTime: '12:00', kind: 'available' },
-  ]);
+    // Weekday evenings and weekend mornings — a realistic aspirant's week.
+    await db.delete(availabilityRules).where(eq(availabilityRules.userId, ADULT_ID));
+    await db.insert(availabilityRules).values([
+      ...[1, 2, 3, 4, 5].map((day) => ({
+        userId: ADULT_ID,
+        dayOfWeek: day,
+        startTime: '18:00',
+        endTime: '21:30',
+        kind: 'available',
+      })),
+      { userId: ADULT_ID, dayOfWeek: 6, startTime: '09:00', endTime: '13:00', kind: 'available' },
+      { userId: ADULT_ID, dayOfWeek: 0, startTime: '09:00', endTime: '12:00', kind: 'available' },
+    ]);
 
-  await db
-    .insert(consents)
-    .values([
-      { userId: ADULT_ID, consentType: 'terms', granted: true, version: '2026-07-01' },
-      { userId: ADULT_ID, consentType: 'privacy', granted: true, version: '2026-07-01' },
-      { userId: MINOR_ID, consentType: 'terms', granted: true, version: '2026-07-01' },
-      { userId: MINOR_ID, consentType: 'privacy', granted: true, version: '2026-07-01' },
-      // Deliberately absent for the minor: 'guardian'. The gate should block.
-    ])
-    .onConflictDoNothing();
+    await db
+      .insert(consents)
+      .values([
+        { userId: ADULT_ID, consentType: 'terms', granted: true, version: '2026-07-01' },
+        { userId: ADULT_ID, consentType: 'privacy', granted: true, version: '2026-07-01' },
+        { userId: MINOR_ID, consentType: 'terms', granted: true, version: '2026-07-01' },
+        { userId: MINOR_ID, consentType: 'privacy', granted: true, version: '2026-07-01' },
+        // Deliberately absent for the minor: 'guardian'. The gate should block.
+      ])
+      .onConflictDoNothing();
+  }
 
+  // ── Reference data. Always seeded: without it the goal form has no
+  //    curriculum to offer and the product cannot be used. ──────────────────
   // ── Phase 1: canonical vocabulary + curated template (roadmap 1.8) ────────
   const templateConcepts = flattenTemplateConcepts(JEE_PHYSICS_FOUNDATIONS_TREE);
   await db
@@ -190,13 +237,18 @@ try {
   // fixture built by exercising the API rather than seeded directly here —
   // see PHASE_1_REPORT.md's demo walkthrough for the end-to-end example.
 
-  log('Seeded 2 users (1 adult, 1 minor awaiting guardian consent).');
   log(`  Seeded ${templateConcepts.length} canonical concepts + 1 curriculum template.`);
   log(
     `  Seeded ${newQuestions.length} golden-set questions (${GOLDEN_QUESTIONS.length} total defined).`,
   );
-  log(`  demo@friday.app  / ${DEV_PASSWORD}`);
-  log(`  minor@friday.app / ${DEV_PASSWORD}`);
+
+  if (seedDemoUsers) {
+    log('  Seeded 2 demo users (1 adult, 1 minor awaiting guardian consent).');
+    log(`    demo@friday.app  / ${DEV_PASSWORD}`);
+    log(`    minor@friday.app / ${DEV_PASSWORD}`);
+  } else {
+    log('  Demo users NOT seeded — reference data only. This is the production shape.');
+  }
 } catch (error) {
   console.error('Seed failed:', error);
   process.exitCode = 1;

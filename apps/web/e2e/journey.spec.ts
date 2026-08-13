@@ -41,8 +41,30 @@ test.describe('a learner from sign-up to measurable progress', () => {
     await expect(page.getByRole('heading', { name: /when.*you.*(free|study)/i })).toBeVisible();
   });
 
+  test('the common answer is one tap, not eighteen dropdowns', async () => {
+    await page.goto('/onboarding/availability');
+
+    // The whole point of the redesign: a learner who agrees with a preset
+    // never opens the editor at all.
+    await expect(page.getByRole('button', { name: /Evenings after school/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(page.getByLabel('Day', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Save and continue' })).toBeEnabled();
+
+    // Picking a different week changes the total without touching a select.
+    await page.getByRole('button', { name: /Mostly weekends/ }).click();
+    await expect(page.getByRole('button', { name: /Mostly weekends/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(page.getByText(/12h a week/)).toBeVisible();
+  });
+
   test('cannot save an overlapping week, and is told why', async () => {
     await page.goto('/onboarding/availability');
+    await page.getByRole('button', { name: 'Set my own times' }).click();
 
     // Add a slot that collides with the Monday default (18:00–20:30).
     await page.getByRole('button', { name: 'Add a slot' }).click();
@@ -56,6 +78,10 @@ test.describe('a learner from sign-up to measurable progress', () => {
 
     await expect(page.getByText(/overlaps another slot/i).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Save and continue' })).toBeDisabled();
+
+    // The reason is now also stated next to the disabled button, because it
+    // used to sit up to a thousand pixels above it.
+    await expect(page.getByText(/Two slots overlap/i)).toBeVisible();
 
     // Remove it and the form recovers.
     await added.getByRole('button', { name: /^Remove/ }).click();
@@ -81,10 +107,20 @@ test.describe('a learner from sign-up to measurable progress', () => {
     await expect(start).toBeVisible();
   });
 
-  test('"Why this?" reveals the factor breakdown behind the recommendation', async () => {
+  test('the reasoning is on screen without being asked for', async () => {
     await page.goto('/dashboard');
-    await page.getByText('Why this?').click();
-    await expect(page.getByText(/readiness/i).first()).toBeVisible();
+
+    // No longer behind a disclosure. Explaining itself is the one thing FRIDAY
+    // does that a to-do list cannot, so it is not something to go looking for.
+    await expect(page.getByText('Why this one')).toBeVisible();
+    await expect(page.getByText('How much it matters')).toBeVisible();
+    await expect(page.getByText('main reason')).toBeVisible();
+
+    // And the engine's own vocabulary stays inside the engine.
+    const body = await page.locator('main').innerText();
+    expect(body).not.toMatch(/Priority score/i);
+    expect(body).not.toMatch(/low confidence|medium confidence/i);
+    expect(body).not.toMatch(/\bdecayRisk\b/);
   });
 
   test('completes a study session and sees mastery move', async () => {
@@ -92,48 +128,61 @@ test.describe('a learner from sign-up to measurable progress', () => {
     await page.getByRole('link', { name: 'Start this now' }).click();
     await expect(page).toHaveURL(/\/study\//);
 
-    // The clock only runs once a session exists server-side.
-    await expect(page.getByRole('timer')).toHaveText('00:00');
     await page.getByRole('button', { name: 'Start studying' }).click();
-    await expect(page.getByText('Running')).toBeVisible();
 
-    // Wall-clock based, so it must actually advance.
+    // Focus mode: the clock is running and the rating form is NOT yet on
+    // screen. Asking how it went before it has gone is the thing this phase
+    // separation exists to stop.
+    await expect(page.getByRole('timer')).toBeVisible();
+    await expect(page.getByRole('button', { name: /Easily/ })).toHaveCount(0);
+
+    // Server-derived, so it must actually advance.
     await expect(page.getByRole('timer')).not.toHaveText('00:00', { timeout: 5_000 });
 
     await page.getByRole('button', { name: 'Pause' }).click();
     await expect(page.getByText('Paused')).toBeVisible();
     await page.getByRole('button', { name: 'Resume' }).click();
 
+    await page.getByRole('button', { name: /done studying/i }).click();
+
     // Finishing with nothing rated must be refused — an unrated session would
     // produce no evidence, and silently recording it would be a lie.
-    await page.getByRole('button', { name: 'Finish session' }).click();
-    await expect(page.getByText(/Rate at least one concept/)).toBeVisible();
+    await page.getByRole('button', { name: 'Save and finish' }).click();
+    await expect(page.getByText(/Pick an answer for at least one topic/)).toBeVisible();
 
-    await page.getByRole('button', { name: 'Good' }).first().click();
+    await page.getByRole('button', { name: /^Yes/ }).first().click();
     await page.getByLabel(/Notes/).fill('Browser-verified session.');
-    await page.getByRole('button', { name: 'Finish session' }).click();
+    await page.getByRole('button', { name: 'Save and finish' }).click();
 
+    // The payoff is a screen you can read, not a toast that vanishes.
+    await expect(page.getByText(/minutes? done\./)).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText(/\d+%/).first()).toBeVisible();
+
+    // The forward hook: the outcome screen reinforces the behaviour the learner
+    // just performed — staying with the session — and the CTA takes them on.
+    await expect(page.getByText(/stayed with it|Short counts/i)).toBeVisible();
+    await page.getByRole('button', { name: 'See updated plan' }).click();
     await expect(page).toHaveURL(/\/dashboard/, { timeout: 20_000 });
-    // The mastery delta is the payoff of the whole loop; it is shown as a toast.
-    await expect(page.getByText(/Mastery \d+% → \d+%/)).toBeVisible({ timeout: 10_000 });
   });
 
   test('refuses a second concurrent session (E-19)', async () => {
     await page.goto('/dashboard');
     await page.getByRole('link', { name: 'Start this now' }).click();
     await page.getByRole('button', { name: 'Start studying' }).click();
-    await expect(page.getByText('Running')).toBeVisible();
+    await expect(page.getByRole('timer')).toBeVisible();
     const studyUrl = page.url();
 
     const second = await context.newPage();
     await second.goto(studyUrl);
-    // The page reflects the already-open session rather than offering a second
-    // start, which is the correct rendering of E-19.
-    await expect(second.getByText(/Running|Paused/)).toBeVisible();
+    // Resumes the running session rather than offering a second start, and the
+    // clock it shows is the real elapsed time, not a fresh 00:00.
+    await expect(second.getByRole('timer')).toBeVisible();
+    await expect(second.getByRole('button', { name: 'Start studying' })).toHaveCount(0);
     await second.close();
 
-    // Clean up so later steps are not blocked by an open session.
-    await page.getByRole('button', { name: 'Abandon' }).click();
+    // Clean up. Discarding is confirmed now, so it takes two deliberate taps.
+    await page.getByRole('button', { name: 'Discard' }).click();
+    await page.getByRole('button', { name: 'Discard', exact: true }).last().click();
     await expect(page).toHaveURL(/\/dashboard/, { timeout: 20_000 });
   });
 
@@ -146,7 +195,9 @@ test.describe('a learner from sign-up to measurable progress', () => {
 
     await page.getByRole('button', { name: /^Practise/ }).click();
 
-    await expect(page.getByText(/Question 1 of/)).toBeVisible({ timeout: 30_000 });
+    // A one-question set reads "Quick check" rather than the self-defeating
+    // "Question 1 of 1"; anything longer counts as normal.
+    await expect(page.getByText(/Quick check|Question 1 of/)).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole('progressbar', { name: 'Practice progress' })).toBeVisible();
 
     // Walk the whole set. A practice set mixes question types — multiple choice

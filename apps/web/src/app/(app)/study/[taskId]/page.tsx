@@ -28,6 +28,7 @@ export default async function StudyPage({ params }: { params: Promise<{ taskId: 
       estimatedMinutes={data.task.estimatedMinutes}
       concepts={data.concepts}
       existingSessionId={data.activeSessionId}
+      existingSessionStartedAt={data.activeSessionStartedAt}
     />
   );
 }

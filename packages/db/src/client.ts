@@ -43,12 +43,13 @@ function createPool(connectionString: string): pg.Pool {
 export function getDb(): Database {
   if (globalRef.__fridayDb) return globalRef.__fridayDb;
 
-  const connectionString = process.env['DATABASE_URL'];
-  if (!connectionString) {
+  const rawConnectionString = process.env['DATABASE_URL'];
+  if (!rawConnectionString) {
     throw new Error(
       'DATABASE_URL is not set. Copy .env.example to .env.local and provide a Postgres connection string.',
     );
   }
+  const connectionString = rawConnectionString.trim();
 
   const pool = globalRef.__fridayPool ?? createPool(connectionString);
   const db = drizzle(pool, { schema });

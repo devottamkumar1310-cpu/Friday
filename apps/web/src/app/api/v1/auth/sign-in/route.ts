@@ -2,11 +2,13 @@ import { SignInRequestSchema } from '@friday/contracts';
 import { publicRoute } from '@/lib/api/handler';
 import { signIn } from '@/modules/identity/identity.service';
 import { SESSION_COOKIE, sessionCookieOptions } from '@/modules/identity/session';
+import { RATE_LIMITS } from '@/lib/api/rate-limit';
 
 export const runtime = 'nodejs';
 
 export const POST = publicRoute({
   body: SignInRequestSchema,
+  rateLimit: RATE_LIMITS.signIn,
   handler: async ({ body, meta }) => {
     const { user, token } = await signIn(body, meta);
 

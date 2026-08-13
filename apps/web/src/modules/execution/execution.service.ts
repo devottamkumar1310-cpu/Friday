@@ -17,6 +17,7 @@ import {
 } from '@friday/db';
 import { logger } from '@friday/observability';
 import { EVENTS, trackEvent } from '../platform/analytics.service';
+import { replanQuietly } from '../planning/planning.service';
 
 /**
  * Sessions and the evidence -> mastery/retention update — SYSTEM_ARCHITECTURE
@@ -94,6 +95,40 @@ export async function completeSession(
     if (session.status !== 'active') throw new ApiError(ERROR_CODES.SESSION_NOT_ACTIVE);
 
     const now = new Date();
+
+    /**
+     * The duration of record, bounded by wall-clock.
+     *
+     * The client reports *effective* study time — total elapsed minus whatever
+     * was paused — and that subtraction is the right one. But the client is
+     * also the one place we cannot verify: pause state lives in `localStorage`,
+     * so clearing storage mid-session loses the paused total and inflates the
+     * figure, and the request schema on its own would accept a flat 1440.
+     *
+     * The server knows exactly one thing the client cannot argue with:
+     * `started_at`. No session can have consumed more time than has passed
+     * since it began. Pause only ever *reduces* effective time, so clamping to
+     * the elapsed wall-clock is always safe and never truncates an honest
+     * session.
+     *
+     * This matters beyond tidiness — `activeMinutes` feeds `totalMinutes` on
+     * the mastery row, which feeds pace, feasibility and every forecast the
+     * product makes.
+     */
+    const wallClockMinutes = Math.max(
+      1,
+      Math.ceil((now.getTime() - session.startedAt.getTime()) / 60_000),
+    );
+    const effectiveMinutes = Math.min(input.activeMinutes, wallClockMinutes);
+
+    if (effectiveMinutes < input.activeMinutes) {
+      logger.warn('reported study time exceeded elapsed time; clamped', {
+        sessionId,
+        reported: input.activeMinutes,
+        elapsed: wallClockMinutes,
+      });
+    }
+
     const masteryChanges: CompleteSessionResult['changes']['mastery'] = [];
     const retentionChanges: CompleteSessionResult['changes']['retention'] = [];
 
@@ -135,7 +170,7 @@ export async function completeSession(
         evidenceCount: updated.evidenceCount,
         distinctSources: Math.min(5, priorMastery.distinctSources + 1),
         outcomeVariance: priorMastery.outcomeVariance.toFixed(3),
-        totalMinutes: (masteryRow?.totalMinutes ?? 0) + input.activeMinutes,
+        totalMinutes: (masteryRow?.totalMinutes ?? 0) + effectiveMinutes,
         firstStudiedAt: masteryRow?.firstStudiedAt ?? now,
         lastEvidenceAt: now,
       });
@@ -202,7 +237,7 @@ export async function completeSession(
     }
 
     const completed = await execution.completeSession(user.id, sessionId, {
-      activeMinutes: input.activeMinutes,
+      activeMinutes: effectiveMinutes,
       notes: input.notes ?? null,
       selfRating: input.ratings[0]?.rating ?? null,
       endedAt: now,
@@ -215,7 +250,7 @@ export async function completeSession(
       eventType: 'session.completed',
       entityType: 'study_session',
       entityId: sessionId,
-      payload: { masteryChanges, retentionChanges, activeMinutes: input.activeMinutes },
+      payload: { masteryChanges, retentionChanges, activeMinutes: effectiveMinutes },
     });
 
     return {
@@ -226,17 +261,48 @@ export async function completeSession(
 
   logger.info('session completed', { sessionId, conceptsUpdated: input.ratings.length });
   trackEvent(user.id, EVENTS.sessionCompleted, {
-    activeMinutes: input.activeMinutes,
+    // The clamped figure, from the row — analytics must agree with the record.
+    activeMinutes: result.session.activeMinutes,
     conceptsRated: input.ratings.length,
   });
+
+  // New evidence just landed, so the ranking that produced this task may no
+  // longer hold. Awaited rather than fired-and-forgotten: the learner is about
+  // to be shown their next action, and it should be computed from what they
+  // just did. `replanQuietly` cannot throw, and the materiality gate means the
+  // usual outcome is "nothing changed".
+  await replanQuietly(user, result.session.goalId, 'session_completed', 'evidence');
+
   return result;
 }
 
 export async function abandonSession(user: UserRow, sessionId: string): Promise<void> {
   const session = await executionRepository(getDb()).findSession(user.id, sessionId);
   if (!session) throw ApiError.notFound();
+
+  /**
+   * Terminal is terminal.
+   *
+   * `completeSession` has always rejected a non-active session; this path did
+   * not, and an audit confirmed the consequence: `complete` then `abandon`
+   * returned 200 and rewrote a finished session's status to `abandoned`. The
+   * minutes and the evidence stayed, but every reader of `status` — completion
+   * rate, band, trend, streak — then saw a session the learner had actually
+   * finished as one they walked out on. A retry, a double-tap, or a tab left
+   * open was enough to corrupt the learner's own history, silently, in the one
+   * table the adaptive engine is built on.
+   *
+   * Same code as the completion path, so both replays fail the same way.
+   */
+  if (session.status !== 'active') throw new ApiError(ERROR_CODES.SESSION_NOT_ACTIVE);
+
   await executionRepository(getDb()).abandonSession(user.id, sessionId);
   trackEvent(user.id, EVENTS.sessionAbandoned);
+
+  // A discarded session produced no evidence, but it did consume a slot the
+  // plan had allocated. Re-deriving keeps the remaining window honest about
+  // how much time is actually left in it.
+  await replanQuietly(user, session.goalId, 'session_abandoned', 'evidence');
 }
 
 /** Session history for the UI — API_SPECIFICATION §5.6. */

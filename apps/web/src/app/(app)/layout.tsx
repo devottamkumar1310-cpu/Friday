@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { MainNav } from '@/components/app/main-nav';
 import { SignOutButton } from '@/components/app/sign-out-button';
+import { ThemeToggle } from '@/components/app/theme-toggle';
 import { requireUser } from '@/lib/auth/server';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -25,6 +26,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <span className="hidden max-w-32 truncate text-sm text-muted-foreground md:inline">
               {user.displayName}
             </span>
+            <ThemeToggle />
             <SignOutButton />
           </div>
         </div>

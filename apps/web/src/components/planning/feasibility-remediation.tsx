@@ -63,7 +63,13 @@ export function FeasibilityRemediation({ feasibility }: { feasibility: Feasibili
           You need {hours(feasibility.requiredMinutes)} and have{' '}
           {hours(feasibility.availableMinutes)} available
           {feasibility.slackMinutes >= 0
-            ? ` — ${hours(feasibility.slackMinutes)} of buffer (${feasibility.slackPercent.toFixed(1)}%).`
+            ? // The percentage is only informative when the two numbers are the
+              // same order of magnitude. A year out from the exam the ratio is
+              // in the thousands — "11188.4% buffer" reads as broken software,
+              // not as good news, and it was the first number on the page.
+              feasibility.slackPercent > 200
+              ? ' — comfortably more time than you need at the moment.'
+              : ` — ${hours(feasibility.slackMinutes)} spare (${Math.round(feasibility.slackPercent)}% buffer).`
             : ` — short by ${hours(Math.abs(feasibility.slackMinutes))}.`}
           {feasibility.projectedCompletionDate
             ? ` At your observed pace you finish around ${feasibility.projectedCompletionDate}` +
@@ -74,7 +80,13 @@ export function FeasibilityRemediation({ feasibility }: { feasibility: Feasibili
         </CardDescription>
       </CardHeader>
 
-      {feasibility.remediationOptions.length > 0 ? (
+      {/*
+        Only offered when there is a gap. "Three ways to close the gap" used to
+        render underneath an "On track" verdict with hundreds of spare hours —
+        the card telling the learner to fix a problem it had just said they did
+        not have.
+      */}
+      {feasibility.verdict !== 'on_track' && feasibility.remediationOptions.length > 0 ? (
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">
             Three ways to close the gap. FRIDAY will not pick for you — the right trade-off depends

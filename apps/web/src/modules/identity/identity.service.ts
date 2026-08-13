@@ -222,6 +222,13 @@ export async function recordConsent(user: UserRow, input: RecordConsentRequest, 
   };
 }
 
+export async function deleteAccount(user: UserRow): Promise<void> {
+  const db = getDb();
+  await authSessionsRepository(db).deleteAllForUser(user.id);
+  await usersRepository(db).softDelete(user.id);
+  logger.info('account deleted', { userId: user.id });
+}
+
 async function issueSession(user: UserRow, meta: RequestMeta): Promise<AuthResult> {
   const token = generateSessionToken();
   const expiresAt = sessionExpiry();

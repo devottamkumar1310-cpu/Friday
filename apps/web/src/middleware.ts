@@ -24,7 +24,18 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 const SESSION_COOKIE = 'friday_session';
 
-const PROTECTED = ['/dashboard', '/onboarding', '/settings'];
+const PROTECTED = [
+  '/dashboard',
+  '/onboarding',
+  '/settings',
+  '/billing',
+  '/plan',
+  '/practice',
+  '/memory',
+  '/progress',
+  '/coach',
+  '/study',
+];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

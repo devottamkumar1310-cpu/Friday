@@ -7,6 +7,7 @@ import {
   BarChart3,
   Brain,
   CalendarDays,
+  CreditCard,
   Dumbbell,
   Menu,
   MessageSquare,
@@ -32,6 +33,7 @@ const LINKS = [
   { href: '/progress', label: 'Progress', icon: BarChart3 },
   { href: '/memory', label: 'Memory', icon: Brain },
   { href: '/settings', label: 'Settings', icon: Settings },
+  { href: '/billing', label: 'Billing', icon: CreditCard },
 ];
 
 export function MainNav() {

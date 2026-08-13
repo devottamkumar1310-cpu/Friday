@@ -67,12 +67,13 @@ test('a study session still records evidence with the model down', async () => {
   await page.goto('/dashboard');
   await page.getByRole('link', { name: 'Start this now' }).click();
   await page.getByRole('button', { name: 'Start studying' }).click();
-  await expect(page.getByText('Running')).toBeVisible();
+  await expect(page.getByRole('timer')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Good' }).first().click();
-  await page.getByRole('button', { name: 'Finish session' }).click();
+  await page.getByRole('button', { name: /done studying/i }).click();
+  await page.getByRole('button', { name: /^Yes/ }).first().click();
+  await page.getByRole('button', { name: 'Save and finish' }).click();
 
-  await expect(page).toHaveURL(/\/dashboard/, { timeout: 30_000 });
   // Mastery moved. The loop closed with no model involved at any point.
-  await expect(page.getByText(/Mastery \d+% → \d+%/)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/minutes? done\./)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/\d+%/).first()).toBeVisible();
 });

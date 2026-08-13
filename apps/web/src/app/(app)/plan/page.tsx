@@ -159,7 +159,9 @@ export default async function PlanPage() {
                               {task.estimatedMinutes} min
                             </span>
                             {task.status === 'pending' ? (
-                              <Button size="sm" variant="secondary" asChild>
+                              // 44px minimum: `size="sm"` rendered these at 32px,
+                              // and there are ten of them stacked on a phone.
+                              <Button size="sm" variant="secondary" asChild className="h-11 px-4">
                                 <Link href={`/study/${task.id}`}>Study</Link>
                               </Button>
                             ) : null}

@@ -1,6 +1,7 @@
 import { RegeneratePlanRequestSchema } from '@friday/contracts';
 import { authedRoute, requireParam } from '@/lib/api/handler';
 import { regeneratePlan, toWirePlan } from '@/modules/planning/planning.service';
+import { RATE_LIMITS } from '@/lib/api/rate-limit';
 
 export const runtime = 'nodejs';
 
@@ -11,6 +12,7 @@ export const runtime = 'nodejs';
  */
 export const POST = authedRoute({
   body: RegeneratePlanRequestSchema,
+  rateLimit: RATE_LIMITS.replan,
   handler: async ({ user, params, body }) => {
     const result = await regeneratePlan(user, requireParam(params, 'goalId'), body.reason);
     return {

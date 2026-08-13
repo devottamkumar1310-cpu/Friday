@@ -157,36 +157,53 @@ export default async function ProgressPage() {
           </CardContent>
         </Card>
 
+        {/*
+          Pace needs history to mean anything.
+
+          With one day of data a learner's measured pace is structurally 0% per
+          week, so this card greeted every new student with an orange badge
+          reading "behind the pace you need" — directly below a green "On track"
+          verdict on the same screen. Two contradictory judgements, one of them
+          punitive, both derived from a single data point that the card's own
+          footnote admitted was not a trend.
+
+          The gate below is the same `trends.length >= 2` the sparkline already
+          used. Until there is something real to say, the card says what is
+          actually true: come back tomorrow.
+        */}
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
               <CardTitle>Pace</CardTitle>
-              <Badge variant={progress.velocity.trend === 'declining' ? 'warning' : 'success'}>
-                {trendCopy}
-              </Badge>
+              {trends.length >= 2 ? (
+                <Badge variant={progress.velocity.trend === 'declining' ? 'warning' : 'success'}>
+                  {trendCopy}
+                </Badge>
+              ) : null}
             </div>
             <CardDescription>
               Measured from your actual progress, not from the hours you planned at signup.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <Stat
-                label="Your pace"
-                value={`${(progress.velocity.perWeek * 100).toFixed(1)}% / week`}
-              />
-              <Stat
-                label="Needed"
-                value={`${(progress.velocity.requiredPerWeek * 100).toFixed(1)}% / week`}
-              />
-            </div>
-
             {trends.length >= 2 ? (
-              <Sparkline points={trends.map((t) => t.weightedProgress)} />
+              <>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <Stat
+                    label="Your pace"
+                    value={`${(progress.velocity.perWeek * 100).toFixed(1)}% / week`}
+                  />
+                  <Stat
+                    label="Needed"
+                    value={`${(progress.velocity.requiredPerWeek * 100).toFixed(1)}% / week`}
+                  />
+                </div>
+                <Sparkline points={trends.map((t) => t.weightedProgress)} />
+              </>
             ) : (
-              <p className="text-xs text-subtle-foreground">
-                A trend line appears once there are at least two daily snapshots. One data point is
-                not a trend, so nothing is drawn yet.
+              <p className="text-sm text-muted-foreground">
+                Study on another day and your pace shows up here. One day is not a trend, so FRIDAY
+                will not pretend to read one.
               </p>
             )}
           </CardContent>

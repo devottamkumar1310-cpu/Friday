@@ -34,7 +34,14 @@ function tomorrow(): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function GoalForm({ templates }: { templates: TemplateOption[] }) {
+export function GoalForm({
+  templates,
+  weeklyMinutes,
+}: {
+  templates: TemplateOption[];
+  /** Derived from the availability just saved — never asked for again. */
+  weeklyMinutes: number;
+}) {
   const router = useRouter();
   const [formError, setFormError] = useState<{ message: string; requestId?: string } | null>(null);
 
@@ -48,7 +55,7 @@ export function GoalForm({ templates }: { templates: TemplateOption[] }) {
     defaultValues: {
       type: 'exam',
       targetDate: defaultTargetDate(),
-      targetWeeklyMinutes: 600,
+      targetWeeklyMinutes: weeklyMinutes,
       templateSlug: templates[0]?.slug ?? '',
     },
   });
@@ -153,24 +160,16 @@ export function GoalForm({ templates }: { templates: TemplateOption[] }) {
         </Field>
       </div>
 
-      <Field
-        label="Hours you can study each week"
-        htmlFor="targetWeeklyMinutes"
-        required
-        error={errors.targetWeeklyMinutes?.message}
-        hint="An honest number. FRIDAY plans against what you actually do, and adjusts as it learns."
-      >
-        <Select
-          id="targetWeeklyMinutes"
-          {...register('targetWeeklyMinutes', { valueAsNumber: true })}
-        >
-          <option value={300}>5 hours a week</option>
-          <option value={600}>10 hours a week</option>
-          <option value={900}>15 hours a week</option>
-          <option value={1200}>20 hours a week</option>
-          <option value={1800}>30 hours a week</option>
-        </Select>
-      </Field>
+      {/*
+        Not a question any more — the answer is the schedule the learner set one
+        screen ago. Asking twice invited two different answers, and the default
+        here ("10 hours a week") silently overrode a week worth 15h 30m.
+      */}
+      <input
+        type="hidden"
+        {...register('targetWeeklyMinutes', { valueAsNumber: true })}
+        value={weeklyMinutes}
+      />
 
       <Field
         label="How much do you already know?"

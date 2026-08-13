@@ -7,12 +7,14 @@ import {
 import {
   availabilityRepository,
   getDb,
+  goalsRepository,
   preferencesRepository,
   type AvailabilityRuleRow,
   type UserRow,
 } from '@friday/db';
 import { logger } from '@friday/observability';
 import { EVENTS, trackEvent } from '../platform/analytics.service';
+import { replanQuietly } from '../planning/planning.service';
 
 /**
  * Availability and preferences — API_SPECIFICATION §5.1.
@@ -97,9 +99,28 @@ export async function setAvailability(user: UserRow, input: SetAvailabilityReque
     weeklyMinutes: weeklyMinutes(input.rules),
   });
 
-  // §10.1 classes this as a Constraint trigger → re-plan. M0 ships manual
-  // triggers only (§1.1), so the caller regenerates explicitly; the UI does
-  // that immediately after saving so the learner never sees a stale plan.
+  /**
+   * §10.1 classes this as a Constraint trigger, and it now actually fires one.
+   *
+   * It used to say "the caller regenerates explicitly; the UI does that
+   * immediately after saving" — which was not true of any caller. An audit
+   * collapsed availability from 48,510 minutes a fortnight to 1,560 and the plan
+   * stayed on version 1, still slotting 145 minutes into a Thursday the learner
+   * had just given away. `'constraint'` was declared in `ReplanTriggerClass` and
+   * fired from nowhere in the codebase.
+   *
+   * Server-side rather than in the form, so it holds for the API too.
+   *
+   * `replanQuietly` swallows its own failures: a scheduler problem must not make
+   * saving your availability fail, because the learner would have no idea which
+   * half succeeded. The materiality gate and the churn budget still apply, so a
+   * trivial edit does not churn the plan.
+   */
+  const goals = await goalsRepository(db).listForUser(user.id);
+  for (const goal of goals.filter((g) => g.status === 'active')) {
+    await replanQuietly(user, goal.id, 'availability_changed', 'constraint');
+  }
+
   return getAvailability(user);
 }
 

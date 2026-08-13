@@ -16,6 +16,17 @@ export const GET = authedRoute({
         goalId: result.goalId,
         concepts: result.concepts,
         activeSessionId: result.activeSessionId,
+        /**
+         * Forwarded, not dropped.
+         *
+         * The study *page* calls `getStudyTask` directly on the server, so the
+         * timer resumed correctly and the persistence tests passed — while this
+         * endpoint, which advertises the same payload, quietly omitted the one
+         * field the clock is derived from. Any client using the documented API
+         * would have got a timer that resets to zero on every reload, which is
+         * precisely the bug the field was added to fix.
+         */
+        activeSessionStartedAt: result.activeSessionStartedAt,
       },
     };
   },

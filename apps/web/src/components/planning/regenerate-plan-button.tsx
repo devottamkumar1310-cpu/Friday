@@ -43,7 +43,14 @@ export function RegeneratePlanButton({ goalId }: { goalId: string }) {
   }
 
   return (
-    <Button variant="secondary" size="sm" onClick={regenerate} disabled={busy}>
+    // 44px minimum touch target — `size="sm"` alone renders at 32px.
+    <Button
+      variant="secondary"
+      size="sm"
+      className="h-11 px-4"
+      onClick={regenerate}
+      disabled={busy}
+    >
       {busy ? (
         <Spinner label="Re-planning…" />
       ) : (

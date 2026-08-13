@@ -63,16 +63,22 @@ export interface RouteSegmentContext {
 
 type NextHandler = (req: NextRequest, segment: RouteSegmentContext) => Promise<NextResponse>;
 
+import { checkRateLimit, type RateLimitOptions } from '@/lib/api/rate-limit';
+
 const MUTATING = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 
 /** An endpoint reachable without a session. */
 export function publicRoute<TSchema extends z.ZodTypeAny | undefined = undefined>(config: {
   body?: TSchema;
+  rateLimit?: RateLimitOptions;
   handler: (
     ctx: PublicContext<TSchema extends z.ZodTypeAny ? z.infer<TSchema> : undefined>,
   ) => Promise<RouteResult<unknown>>;
 }): NextHandler {
   return createHandler(async (req, requestId, params) => {
+    if (config.rateLimit) {
+      checkRateLimit(req, req.nextUrl.pathname, config.rateLimit);
+    }
     assertSameOrigin(req);
     const body = await parseBody(req, config.body);
     return config.handler({
@@ -88,11 +94,15 @@ export function publicRoute<TSchema extends z.ZodTypeAny | undefined = undefined
 /** An endpoint requiring a valid session. */
 export function authedRoute<TSchema extends z.ZodTypeAny | undefined = undefined>(config: {
   body?: TSchema;
+  rateLimit?: RateLimitOptions;
   handler: (
     ctx: AuthedContext<TSchema extends z.ZodTypeAny ? z.infer<TSchema> : undefined>,
   ) => Promise<RouteResult<unknown>>;
 }): NextHandler {
   return createHandler(async (req, requestId, params) => {
+    if (config.rateLimit) {
+      checkRateLimit(req, req.nextUrl.pathname, config.rateLimit);
+    }
     assertSameOrigin(req);
 
     const token = req.cookies.get(SESSION_COOKIE)?.value;
@@ -262,6 +272,27 @@ export function sseStream(
   });
 }
 
+/**
+ * Rejects malformed identifiers in the query string, once, for every route.
+ *
+ * Seven handlers read a `*Id` out of `searchParams` by hand, and each passed it
+ * straight to a repository — `?goalId=not-a-uuid` came back as a 500 from the
+ * driver. Validating by *convention* here rather than per route means a new
+ * endpoint that reads `?planId=` is covered on the day it is written, which is
+ * the failure mode a checklist would eventually miss.
+ *
+ * Only keys ending in `Id` are inspected, and only when non-empty: an absent or
+ * blank filter is a route's own business, and several treat it as "unfiltered".
+ */
+function assertIdQueryParamsAreIds(req: NextRequest): void {
+  for (const [key, value] of req.nextUrl.searchParams) {
+    if (!key.endsWith('Id') || value === '') continue;
+    if (!UUID.test(value)) {
+      throw new ApiError(ERROR_CODES.VALIDATION_FAILED, `"${key}" is not a valid identifier.`);
+    }
+  }
+}
+
 function createHandler(
   run: (req: NextRequest, requestId: string, params: RouteParams) => Promise<RouteResult<unknown>>,
 ): NextHandler {
@@ -275,6 +306,7 @@ function createHandler(
       async () => {
         try {
           const params = (await segment?.params) ?? {};
+          assertIdQueryParamsAreIds(req);
           const result = await run(req, requestId, params);
           return respond(result, requestId);
         } catch (error) {
@@ -347,6 +379,26 @@ async function parseBody<TSchema extends z.ZodTypeAny | undefined>(
  * CSRF defence, paired with SameSite=Lax on the session cookie (§4.1).
  * A cross-site form post carries the cookie under Lax for top-level navigation,
  * so the origin check is what actually stops it.
+ *
+ * **Compares hosts, not full origins, and trusts the host the browser actually
+ * reached.** The previous version compared `Origin` against `APP_URL` — or, if
+ * that was unset, against `new URL(req.url).origin`. Both are wrong behind a
+ * platform proxy, and the failure is total: every POST 403s while every page
+ * still renders, which presents as "login is broken" with no other symptom.
+ *
+ * Two ways it broke on a real deployment:
+ *
+ *  - **Multiple hostnames per deploy.** A Vercel project answers on its
+ *    production alias, a per-deployment preview URL, and any custom domain.
+ *    `APP_URL` can only name one, so the others were rejected.
+ *  - **TLS terminated at the edge.** The browser sends
+ *    `Origin: https://app.example`, while `req.url` inside the function is
+ *    `http://…`. Comparing origins made scheme mismatch fatal.
+ *
+ * Comparing against the forwarded host keeps the protection intact — an
+ * attacker's page is served from *their* domain, so its `Origin` never equals
+ * the host the request arrived on — while ending an entire class of
+ * configuration-dependent outage.
  */
 function assertSameOrigin(req: NextRequest): void {
   if (!MUTATING.has(req.method)) return;
@@ -354,17 +406,61 @@ function assertSameOrigin(req: NextRequest): void {
   const origin = req.headers.get('origin');
   if (!origin) return; // Same-origin fetches from some clients omit it entirely.
 
-  const allowed = process.env['APP_URL'] ?? new URL(req.url).origin;
-  if (new URL(origin).origin !== new URL(allowed).origin) {
+  let originHost: string;
+  try {
+    originHost = new URL(origin).host.toLowerCase();
+  } catch {
+    // A malformed Origin is not something a browser sends.
+    throw new ApiError(ERROR_CODES.FORBIDDEN, 'Cross-origin request rejected.');
+  }
+
+  const allowedHosts = new Set<string>();
+
+  // The host the browser actually connected to. `x-forwarded-host` is what a
+  // proxy rewrites it to; `host` is the direct case.
+  const forwarded = req.headers.get('x-forwarded-host') ?? req.headers.get('host');
+  if (forwarded) allowedHosts.add(forwarded.split(',')[0]!.trim().toLowerCase());
+
+  // Still honoured when set, so a deployment can name a canonical origin.
+  const configured = process.env['APP_URL'];
+  if (configured) {
+    try {
+      allowedHosts.add(new URL(configured).host.toLowerCase());
+    } catch {
+      // A malformed APP_URL is a deployment problem; it must not become an
+      // outage on every write.
+    }
+  }
+
+  if (!allowedHosts.has(originHost)) {
     throw new ApiError(ERROR_CODES.FORBIDDEN, 'Cross-origin request rejected.');
   }
 }
 
-/** Reads a required dynamic-segment value, e.g. `requireParam(params, 'goalId')`. */
+/**
+ * Any `xxxxxxxx-xxxx-Mxxx-Nxxx-xxxxxxxxxxxx`. Deliberately not version-pinned:
+ * ids are UUIDv7 today, and a route's job is to reject obvious rubbish, not to
+ * enforce a generation scheme the database owns.
+ */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Reads a required dynamic-segment value, e.g. `requireParam(params, 'goalId')`.
+ *
+ * Validates the shape here rather than in thirty route handlers. Every dynamic
+ * segment in this API is an id, and before this check a malformed one reached
+ * the driver and came back as a 500: `/goals/not-a-uuid/plans/current`,
+ * `/goals/' OR 1=1--/mission-control` and `/goals/null/next-action` all returned
+ * INTERNAL_ERROR. Nothing leaked — the message is generic — but a scanner could
+ * fill the error budget with alarms about a request that was never valid, and a
+ * 500 tells a client to retry something that will never succeed.
+ */
 export function requireParam(params: RouteParams, name: string): string {
   const value = params[name];
   if (!value)
     throw new ApiError(ERROR_CODES.VALIDATION_FAILED, `Missing path parameter "${name}".`);
+  if (!UUID.test(value))
+    throw new ApiError(ERROR_CODES.VALIDATION_FAILED, `"${name}" is not a valid identifier.`);
   return value;
 }
 

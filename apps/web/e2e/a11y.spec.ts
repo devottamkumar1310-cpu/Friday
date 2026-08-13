@@ -86,10 +86,18 @@ test.describe('signed-in pages', () => {
     // A running session swaps in the timer, the rating fieldsets, and the
     // notes field — a different tree, so it needs its own scan.
     await page.getByRole('button', { name: 'Start studying' }).click();
-    await expect(page.getByText('Running')).toBeVisible();
+    await expect(page.getByRole('timer')).toBeVisible();
     expect(describeViolations((await scan(page)).violations)).toBe('');
 
-    await page.getByRole('button', { name: 'Abandon' }).click();
+    // The rating phase is a different tree again — the one a learner actually
+    // has to operate at the end of a long session.
+    await page.getByRole('button', { name: /done studying/i }).click();
+    await expect(page.getByRole('button', { name: /^Yes/ }).first()).toBeVisible();
+    expect(describeViolations((await scan(page)).violations)).toBe('');
+
+    await page.getByRole('button', { name: /Back to studying/i }).click();
+    await page.getByRole('button', { name: 'Discard' }).click();
+    await page.getByRole('button', { name: 'Discard', exact: true }).last().click();
     await expect(page).toHaveURL(/\/dashboard/);
   });
 });
@@ -136,12 +144,29 @@ test.describe('keyboard access', () => {
     await page.getByRole('link', { name: /Edit schedule/i }).click();
     await expect(page).toHaveURL(/\/onboarding\/availability/);
 
+    // The editor is behind a disclosure now, so the disclosure itself has to be
+    // keyboard-reachable before anything inside it matters.
+    const toggle = page.getByRole('button', { name: /Set my own times|Hide exact times/ });
+    await toggle.focus();
+    await expect(toggle).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
     // Reaching and operating the day select by keyboard alone.
     const firstDay = page.getByLabel('Day', { exact: true }).first();
     await firstDay.focus();
     await expect(firstDay).toBeFocused();
     await firstDay.selectOption('3');
     await expect(firstDay).toHaveValue('3');
+  });
+
+  test('the availability presets are real buttons that announce their state', async () => {
+    await page.goto('/onboarding/availability');
+    const preset = page.getByRole('button', { name: /Early mornings/ });
+    await expect(preset).toHaveAttribute('aria-pressed', 'false');
+    await preset.click();
+    await expect(preset).toHaveAttribute('aria-pressed', 'true');
+    expect(describeViolations((await scan(page)).violations)).toBe('');
   });
 
   test('the mobile navigation disclosure is reachable and announces its state', async ({

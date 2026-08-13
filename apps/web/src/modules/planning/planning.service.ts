@@ -7,7 +7,9 @@ import {
   generatePlan,
   identifyMissedTasks,
   type ConceptEdge as CoreConceptEdge,
+  type ReplanTriggerClass,
   type ConceptNode as CoreConceptNode,
+  type MasteryState as CoreMasteryState,
 } from '@friday/core';
 import { ApiError, ERROR_CODES } from '@friday/contracts';
 import {
@@ -27,9 +29,25 @@ import {
   type UserRow,
 } from '@friday/db';
 import { logger } from '@friday/observability';
+import { toCoreMasteryState, toCoreMemoryState } from '../shared/mappers';
 import { buildCapacityWindows, hasAnyAvailability } from './availability';
 
 const WINDOW_DAYS = 14;
+
+/**
+ * Plan `reason` values written by an automatic trigger.
+ *
+ * These are the only commits the churn budget counts. `initial` (sign-up) and
+ * `user_request` (the learner pressed the button) are deliberately excluded.
+ */
+const AUTOMATIC_REASONS = new Set([
+  'session_completed',
+  'session_abandoned',
+  'new_day',
+  // A constraint change the learner made deliberately, but the *re-plan* is
+  // still automatic, so it spends from the same budget as the rest.
+  'availability_changed',
+]);
 
 function toCoreConcepts(rows: ConceptRow[]): CoreConceptNode[] {
   return rows.map((r) => ({
@@ -117,6 +135,38 @@ function toFeasibilityConcepts(
     });
 }
 
+/**
+ * What the learner already knows, in the shape the scheduler expects.
+ *
+ * This is the adaptive loop's missing link. Both plan generation and
+ * re-generation passed `masteryStates: new Map()` — an empty map — which meant
+ * the scheduler treated every concept as though it had never been studied. A
+ * learner could master half their syllabus, press "rebuild my plan", and get
+ * back a plan identical to the one they started with.
+ *
+ * Feeding the real state in is what makes three behaviours emerge from the
+ * engine that already exists, with no new logic:
+ *
+ *   completed  → mastery rises, the readiness gate opens for what it unlocks,
+ *                and the concept's own remaining work falls, so it stops being
+ *                scheduled.
+ *   weak       → a low mastery against a high exam weight is exactly the
+ *                `Impact` term, so struggling topics rise up the ranking.
+ *   missed     → already handled: `identifyMissedTasks` marks them and the
+ *                scheduler re-derives placement from current state rather than
+ *                pushing a backlog forward (§10.4).
+ */
+async function loadMasteryStates(
+  userId: string,
+  materials: PlanMaterials,
+): Promise<Map<string, CoreMasteryState>> {
+  const rows = await memoryRepository(getDb()).listMasteryStates(
+    userId,
+    materials.concepts.map((c) => c.id),
+  );
+  return new Map(rows.map((row) => [row.conceptId, toCoreMasteryState(row)]));
+}
+
 async function persistPlan(
   userId: string,
   goal: GoalRow,
@@ -126,6 +176,7 @@ async function persistPlan(
 ): Promise<PlanRow> {
   const db = getDb();
   const memoryStates = await memoryRepository(db).listAllMemoryStates(userId);
+  const masteryStates = await loadMasteryStates(userId, materials);
 
   const scheduling = generatePlan({
     today: materials.today,
@@ -133,7 +184,7 @@ async function persistPlan(
     targetDate: materials.targetDate,
     concepts: toCoreConcepts(materials.concepts),
     edges: toCoreEdges(materials.edges),
-    masteryStates: new Map(),
+    masteryStates,
     memoryStates: new Map(
       memoryStates.map((m) => [
         m.conceptId,
@@ -293,6 +344,20 @@ export async function regeneratePlan(
   user: UserRow,
   goalId: string,
   reason?: string,
+  /**
+   * Why the re-plan is happening.
+   *
+   * `explicit` — the learner pressed the button. Always commits, never
+   * rate-limited, because they asked and are watching.
+   *
+   * Anything else is automatic, and both guards in §10.3 then apply: the
+   * materiality gate discards a candidate that barely differs, and the churn
+   * budget caps automatic commits at one per 24h and three per week. Those two
+   * are what stop a plan that reshuffles itself under the learner every time
+   * they finish anything — which is the failure mode automatic triggering
+   * invites.
+   */
+  trigger: ReplanTriggerClass = 'explicit',
 ): Promise<{
   committed: boolean;
   reason: string;
@@ -332,14 +397,22 @@ export async function regeneratePlan(
 
   // Build the candidate plan's structural facts before deciding whether to
   // commit, so the materiality gate compares like-for-like (§10.2 DIFF stage).
+  //
+  // "Like-for-like" was not true: the candidate was built from empty mastery
+  // and empty memory while the committed plan below is built from real state,
+  // so the drift the gate measured was partly an artefact of the two being
+  // computed differently. Both now see the same learner.
+  const candidateMastery = await loadMasteryStates(user.id, materials);
+  const candidateMemory = await memoryRepository(db).listAllMemoryStates(user.id);
+
   const scheduling = generatePlan({
     today: materials.today,
     windowDays: WINDOW_DAYS,
     targetDate: materials.targetDate,
     concepts: toCoreConcepts(materials.concepts),
     edges: toCoreEdges(materials.edges),
-    masteryStates: new Map(),
-    memoryStates: new Map(),
+    masteryStates: candidateMastery,
+    memoryStates: new Map(candidateMemory.map((m) => [m.conceptId, toCoreMemoryState(m)])),
     windowCapacity: materials.windowCapacity,
     projectionDailyCapacityMinutes:
       materials.fullHorizonCapacity.reduce((s, w) => s + w.capacityMinutes, 0) /
@@ -348,7 +421,13 @@ export async function regeneratePlan(
     config: DEFAULT_PRIORITY_CONFIG,
   });
 
-  const feasibilityConcepts = toFeasibilityConcepts(materials.concepts, materials.edges, []);
+  // Same reason: the committed plan's feasibility is computed with real reps,
+  // so the candidate's must be too or the verdict comparison is meaningless.
+  const feasibilityConcepts = toFeasibilityConcepts(
+    materials.concepts,
+    materials.edges,
+    candidateMemory.map((m) => ({ conceptId: m.conceptId, reps: m.reps })),
+  );
   const newFeasibility = assessFeasibility(
     feasibilityConcepts,
     materials.fullHorizonCapacity,
@@ -366,6 +445,25 @@ export async function regeneratePlan(
     d.tasks.map((t) => ({ conceptId: t.conceptId, scheduledDate: d.date })),
   );
 
+  /**
+   * Real churn state, derived from plan history rather than assumed zero.
+   *
+   * Counts **only automatic commits**. §10.3's budget exists to stop the plan
+   * reshuffling itself under a learner who is not asking for it; a plan they
+   * requested, and the initial plan built at sign-up, are not that.
+   *
+   * Counting every version instead — the first version of this — spent the
+   * whole 24-hour budget on the learner's own onboarding, so every automatic
+   * trigger returned `churn_budget_exceeded` and the feature never fired once.
+   */
+  const versions = await planningRepository(db).listVersions(user.id, goalId);
+  const now = Date.now();
+  const automatic = versions.filter((v) => AUTOMATIC_REASONS.has(v.reason));
+  const churn = {
+    changesLast24h: automatic.filter((v) => now - v.createdAt.getTime() < 86_400_000).length,
+    changesLast7d: automatic.filter((v) => now - v.createdAt.getTime() < 7 * 86_400_000).length,
+  };
+
   const decision = decideReplan(
     {
       previousTasks,
@@ -378,9 +476,9 @@ export async function regeneratePlan(
       newRequiredMinutes: newFeasibility.requiredMinutes,
       today: materials.today.toISOString().slice(0, 10),
     },
-    'explicit', // M0 §1.1: re-planning is manual trigger only
+    trigger,
     DEFAULT_PRIORITY_CONFIG.driftMaterialityThreshold,
-    { changesLast24h: 0, changesLast7d: 0 }, // explicit requests are never rate-limited
+    churn,
   );
 
   if (!decision.shouldCommit) {
@@ -589,6 +687,7 @@ export async function getStudyTask(user: UserRow, taskId: string) {
   // E-19: one active session per learner. Surfacing it lets the UI resume
   // rather than fail on a second start.
   const active = await executionRepository(db).findActiveSession(user.id);
+  const resumable = active && active.taskId === task.id ? active : null;
 
   return {
     task,
@@ -600,6 +699,77 @@ export async function getStudyTask(user: UserRow, taskId: string) {
       mastery: masteryByConcept.get(c.id) ?? 0,
       estimatedMinutes: c.estimatedMinutes,
     })),
-    activeSessionId: active && active.taskId === task.id ? active.id : null,
+    activeSessionId: resumable?.id ?? null,
+    /**
+     * When the session actually began, from the row rather than the browser.
+     *
+     * The clock used to start at zero in React state on every mount, so a
+     * learner who switched tabs, opened a formula in another app, or simply
+     * reloaded came back to `00:00` — and finishing then recorded a minute of
+     * study against an hour of work. The row has carried `started_at` since
+     * Phase 1; this endpoint was throwing it away.
+     */
+    activeSessionStartedAt: resumable?.startedAt.toISOString() ?? null,
   };
+}
+
+/**
+ * Re-plan in the background, best effort.
+ *
+ * Every automatic trigger goes through here rather than calling
+ * `regeneratePlan` directly, for one reason: **a re-plan must never be able to
+ * fail the thing that triggered it.** A learner who has just finished fifty
+ * minutes of work has earned their session record; losing it because the
+ * scheduler threw would be an unforgivable trade.
+ *
+ * So this swallows and logs. The two §10.3 guards still apply inside
+ * `regeneratePlan` — the materiality gate discards a candidate that barely
+ * differs, and the churn budget caps automatic commits at one per 24h. The
+ * common outcome of these calls is therefore "nothing changed", which is
+ * correct and costs one scheduler run.
+ */
+export async function replanQuietly(
+  user: UserRow,
+  goalId: string,
+  reason: string,
+  trigger: ReplanTriggerClass,
+): Promise<void> {
+  try {
+    const result = await regeneratePlan(user, goalId, reason, trigger);
+    logger.info('automatic re-plan', {
+      goalId,
+      trigger,
+      committed: result.committed,
+      outcome: result.reason,
+      drift: result.drift.drift,
+    });
+  } catch (error) {
+    logger.warn('automatic re-plan failed; the active plan is unchanged', {
+      goalId,
+      trigger,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/**
+ * The new-day trigger.
+ *
+ * A plan is a fourteen-day window with dates in it. Once today moves past the
+ * day the window was built for, yesterday's unfinished work is still sitting on
+ * yesterday's date and the near-horizon has quietly shrunk. Re-deriving on the
+ * first visit of a new day is what turns "you missed Tuesday" from a growing
+ * backlog into a re-ranked queue (§10.4 — FRIDAY never carries debt forward).
+ *
+ * Cheap to call on every dashboard render: it compares two date strings and
+ * returns immediately on the overwhelmingly common path.
+ */
+export async function ensurePlanFreshForToday(user: UserRow, goalId: string): Promise<void> {
+  const active = await planningRepository(getDb()).findActive(user.id, goalId);
+  if (!active) return;
+
+  const today = new Date().toISOString().slice(0, 10);
+  if (active.windowStart >= today) return;
+
+  await replanQuietly(user, goalId, 'new_day', 'temporal');
 }
