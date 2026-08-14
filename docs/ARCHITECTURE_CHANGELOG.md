@@ -447,6 +447,60 @@ Only `pending` is retired. `in_progress` is deliberately excluded: completing a 
 
 ---
 
+## CR-010 — The materiality gate could not fire, and missed work was written before it decided
+
+**Status:** accepted · **Raised:** Phase 4 adaptive verification · **Type:** defect fix
+
+Three defects found by building a database-backed proof of missed-work redistribution (`missed-work.integration.test.ts`). The suite failed **7 of 13 properties** on its first run against real rows.
+
+### CR-010a · Drift was computed across two different id spaces
+
+`regeneratePlan` built the outgoing plan's task snapshots as `{ conceptId: t.id }` — the **task row's** uuid — while the candidate side used real **concept** ids. The two sets were disjoint by construction, so `computeDrift`'s first two components (task-date change, next-7-day concept churn) both returned a flat `1.0` regardless of what the scheduler produced.
+
+Drift could therefore never fall below **0.5** against a materiality threshold of **0.15**. Two byte-identical plans scored 0.5. §10.3's "discard a candidate that barely differs" never ran once, and the only thing actually limiting automatic re-plans was the churn budget.
+
+The number was also logged and returned to callers as though it meant something, which is the worse half: a fictional dial reported as a real one.
+
+**Change.** `loadPlanTaskSnapshots` joins `task_concepts` so both sides are keyed by concept. Observed drift on the same scenario moved from a pinned `0.5` to `0.325`.
+
+### CR-010b · Missed work was retired before the gate decided
+
+The §10.4 marking ran at the top of `regeneratePlan`, before the materiality gate. When the gate then declined to commit — immaterial diff, or churn budget spent — the outgoing tasks had already been marked and **no new plan replaced them**, so the work vanished from the learner's queue entirely.
+
+CR-010a is what made this reachable: while drift was pinned above threshold, the gate never declined, so the bug was latent. Fixing the gate would have exposed it.
+
+**Change.** `regeneratePlan` now only _identifies_ missed work; the write happens inside `persistPlan`'s transaction, alongside the supersede.
+
+### CR-010c · A concept with work in flight was scheduled twice
+
+CR-009 correctly preserves an `in_progress` task across a re-plan. The scheduler had no way to know that, so it queued a **second** task for the same concept — a learner mid-session on Projectile Motion came back to find it listed twice, once in progress and once fresh.
+
+**Change.** `generatePlan` accepts `inFlightConceptIds` and excludes them from the eligible queue. They stay _in the graph_, so their dependents' readiness still gates correctly — filtering them out at the caller would have silently unblocked everything downstream.
+
+### Retirement semantics refined
+
+`retireSupersededTasks` splits CR-009's single `cancelled` outcome by cause, because the difference belongs to the learner rather than to bookkeeping:
+
+| Outcome       | Meaning                                        |
+| ------------- | ---------------------------------------------- |
+| `rescheduled` | was due, not done — the history records a miss |
+| `cancelled`   | was not due yet — nothing was missed           |
+
+`in_progress`, `completed` and `skipped` remain untouched, per CR-009.
+
+**Invariants affected:** none. **Breaking:** no.
+
+**Verified by:** `missed-work.integration.test.ts` — 13 properties against real persisted rows, comparing whole task ledgers before and after, including no-compounding across four consecutive regenerations and the dashboard recommendation belonging to the active plan. Controlled proofs for exam-weight ordering and in-flight exclusion added to `core/scheduling`'s suite; exam-weight prioritisation previously had **no test at all**.
+
+**Measured before/after** (one new-day re-plan, same scenario):
+
+|              | live tasks | live minutes | live plan versions                   |
+| ------------ | ---------- | ------------ | ------------------------------------ |
+| before fixes | 18         | 750          | v1 + v2                              |
+| after fixes  | 10         | 420          | v2 (+ one preserved in-progress row) |
+
+---
+
 ---
 
 ## Baseline History
