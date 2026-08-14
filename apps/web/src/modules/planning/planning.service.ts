@@ -282,13 +282,19 @@ async function persistPlan(
     const activePlan = await planning.findActive(userId, goal.id);
     if (activePlan) {
       await planning.supersede(userId, activePlan.id);
-      // In the same transaction as the supersede, so there is no instant in
-      // which both versions' tasks are live. Every task read path filters by
-      // goal, not by plan, so a gap here is a doubled workload on screen.
+      // The superseded plan's outstanding work is retired in the same
+      // transaction that creates its replacement, so a reader can never
+      // observe both plans' tasks as pending at once (§10.4: the new plan
+      // *replaces* the old one; it does not stack on top of it).
+      //
+      // Split by *why* the work is going away, because the difference is the
+      // learner's rather than bookkeeping: work that was due and not done is
+      // `rescheduled` so the history records a miss, and work that was merely
+      // planned for a later day is `cancelled` because nothing was missed.
       const retired = await planning.retireSupersededTasks(userId, activePlan.id, missedTaskIds);
-      logger.info('superseded plan tasks retired', {
-        goalId: goal.id,
-        supersededVersion: activePlan.version,
+      logger.info('retired superseded plan tasks', {
+        planId: activePlan.id,
+        version: activePlan.version,
         ...retired,
       });
     }

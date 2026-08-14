@@ -1,5 +1,5 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
-import { newLearner, onboard } from './support/learner';
+import { newLearner, onboard, signUp } from './support/learner';
 
 /**
  * Changing availability re-plans.
@@ -168,13 +168,13 @@ test('a failing re-plan can never fail the availability save', async () => {
   const freshPage = await fresh.newPage();
   const learner = newLearner('avail-nogoal');
 
-  await freshPage.goto('/sign-up');
-  await freshPage.getByLabel('Display name').fill(learner.displayName);
-  await freshPage.getByLabel('Email').fill(learner.email);
-  await freshPage.getByLabel('Password', { exact: true }).fill(learner.password);
-  await freshPage.getByLabel('Date of birth').fill('2007-05-01');
-  await freshPage.getByRole('button', { name: /Create account|Sign up/i }).click();
-  await expect(freshPage).toHaveURL(/\/onboarding/, { timeout: 30_000 });
+  // `signUp` from support/learner rather than a local copy of the same steps.
+  // The copy had drifted from the form it was driving: it asked for a "Display
+  // name" field (the label reads "Name") and matched "Password" exactly (the
+  // label's text is "Password*", because the asterisk marks it required). Both
+  // locators resolved to nothing, so the test spent its whole 5-minute budget
+  // waiting on a fill and never reached the assertion it exists to make.
+  await signUp(freshPage, learner);
 
   const status = await freshPage.evaluate(async () => {
     const r = await fetch('/api/v1/me/availability', {
