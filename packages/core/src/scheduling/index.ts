@@ -93,6 +93,19 @@ export interface SchedulingInput {
   config: PriorityConfig;
   /** Hard prerequisite threshold — edges at or above this block placement (I-4). */
   hardPrerequisiteStrength?: number;
+  /**
+   * Concepts the learner already has an unfinished task for.
+   *
+   * A re-plan supersedes *intentions*, not work in flight: a task the learner
+   * has already started keeps its row and its date. Without this, the new plan
+   * had no way to know that, and cheerfully scheduled a second task for the
+   * same concept — so a learner mid-session on Projectile Motion came back to
+   * find it queued twice, once in progress and once fresh.
+   *
+   * They stay in the graph rather than being filtered out by the caller,
+   * because their dependents' readiness still depends on them.
+   */
+  inFlightConceptIds?: ReadonlySet<string>;
 }
 
 const DAY_MS = 86_400_000;
@@ -171,9 +184,11 @@ export function generatePlan(input: SchedulingInput): SchedulingResult {
       .filter((c) => ['learned', 'mastered', 'already_known'].includes(c.status))
       .map((c) => c.id),
   );
+  const inFlight = input.inFlightConceptIds ?? new Set<string>();
   const eligibleQueue = order.filter((id) => {
     const c = graph.nodes.get(id);
-    return c && c.status !== 'excluded' && c.status !== 'mastered' && c.status !== 'already_known';
+    if (!c || inFlight.has(id)) return false;
+    return c.status !== 'excluded' && c.status !== 'mastered' && c.status !== 'already_known';
   });
 
   const days: ScheduledDay[] = input.windowCapacity.map((w) => ({

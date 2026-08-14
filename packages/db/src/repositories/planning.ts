@@ -112,6 +112,22 @@ export function planningRepository(db: Executor) {
         );
     },
 
+    /**
+     * Work the learner has started and not finished, across every plan version.
+     *
+     * Scoped by goal rather than plan on purpose: an in-progress task survives
+     * the re-plan that supersedes its plan, so "what is in flight" is a
+     * question about the learner, not about a plan version.
+     */
+    async listInFlightTasks(userId: string, goalId: string): Promise<TaskRow[]> {
+      return db
+        .select()
+        .from(tasks)
+        .where(
+          and(eq(tasks.userId, userId), eq(tasks.goalId, goalId), eq(tasks.status, 'in_progress')),
+        );
+    },
+
     async findTask(userId: string, taskId: string): Promise<TaskRow | undefined> {
       const [row] = await db
         .select()
@@ -138,12 +154,65 @@ export function planningRepository(db: Executor) {
       // §10.4: never shifted forward — marked `rescheduled` so the row's
       // status is honest, while its concept simply re-enters the next
       // `generatePlan` candidate pool with no special-cased backlog state.
-      for (const taskId of taskIds) {
-        await db
-          .update(tasks)
-          .set({ status: 'rescheduled' })
-          .where(and(eq(tasks.id, taskId), eq(tasks.userId, userId)));
-      }
+      if (taskIds.length === 0) return;
+      await db
+        .update(tasks)
+        .set({ status: 'rescheduled' })
+        .where(and(inArray(tasks.id, taskIds), eq(tasks.userId, userId)));
+    },
+
+    /**
+     * Retires the outgoing plan's un-started work when a new version supersedes it.
+     *
+     * Superseding used to be a single `UPDATE plans SET status`. The tasks kept
+     * their `pending` status, and because every read path — the dashboard's next
+     * action, the plan view, today's blocks, the Coach's context — filters tasks
+     * by **goal** rather than by plan, those rows stayed as real to the learner
+     * as the new ones. A single new-day re-plan therefore did not replace the
+     * plan so much as add a second copy of it: measured end to end, one
+     * regeneration took a learner from 8 live tasks and 330 minutes to 18 and
+     * 750, and five regenerations put five copies of every concept in the queue.
+     *
+     * Two different retirements, because the distinction is the learner's, not
+     * a bookkeeping detail:
+     *
+     *   `rescheduled` — it was due and they did not do it. Named honestly so
+     *                   the history shows a miss, then re-derived from priority
+     *                   like anything else (§10.4).
+     *   `cancelled`   — it was not due yet. The new plan supersedes the
+     *                   intention; nothing was missed and the history should
+     *                   not claim otherwise.
+     *
+     * `in_progress`, `completed` and `skipped` are never touched. Those are
+     * evidence, and a re-plan does not get to rewrite what the learner did.
+     */
+    async retireSupersededTasks(
+      userId: string,
+      planId: string,
+      missedTaskIds: string[],
+    ): Promise<{ rescheduled: number; cancelled: number }> {
+      const missed = missedTaskIds.length
+        ? await db
+            .update(tasks)
+            .set({ status: 'rescheduled' })
+            .where(
+              and(
+                eq(tasks.userId, userId),
+                eq(tasks.planId, planId),
+                eq(tasks.status, 'pending'),
+                inArray(tasks.id, missedTaskIds),
+              ),
+            )
+            .returning({ id: tasks.id })
+        : [];
+
+      const cancelled = await db
+        .update(tasks)
+        .set({ status: 'cancelled' })
+        .where(and(eq(tasks.userId, userId), eq(tasks.planId, planId), eq(tasks.status, 'pending')))
+        .returning({ id: tasks.id });
+
+      return { rescheduled: missed.length, cancelled: cancelled.length };
     },
   };
 }

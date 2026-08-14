@@ -79,6 +79,8 @@ interface PlanMaterials {
   edges: ConceptEdgeRow[];
   windowCapacity: Awaited<ReturnType<typeof buildCapacityWindows>>;
   fullHorizonCapacity: Awaited<ReturnType<typeof buildCapacityWindows>>;
+  /** Concepts with a task the learner has already started — never re-scheduled. */
+  inFlightConceptIds: Set<string>;
 }
 
 async function loadPlanMaterials(userId: string, goal: GoalRow): Promise<PlanMaterials> {
@@ -101,7 +103,24 @@ async function loadPlanMaterials(userId: string, goal: GoalRow): Promise<PlanMat
   const fullHorizonCapacity = buildCapacityWindows(rules, today, horizonDays);
   const windowCapacity = fullHorizonCapacity.slice(0, WINDOW_DAYS);
 
-  return { today, targetDate, concepts, edges, windowCapacity, fullHorizonCapacity };
+  const inFlight = await planningRepository(db).listInFlightTasks(userId, goal.id);
+  const inFlightLinks = await planningRepository(db).listTaskConceptsForTasks(
+    userId,
+    inFlight.map((t) => t.id),
+  );
+  const inFlightConceptIds = new Set(
+    inFlightLinks.filter((l) => l.isPrimary).map((l) => l.conceptId),
+  );
+
+  return {
+    today,
+    targetDate,
+    concepts,
+    edges,
+    windowCapacity,
+    fullHorizonCapacity,
+    inFlightConceptIds,
+  };
 }
 
 /** Feasibility's per-concept input (§9). M0: no separate practice/review estimation yet. */
@@ -167,12 +186,45 @@ async function loadMasteryStates(
   return new Map(rows.map((row) => [row.conceptId, toCoreMasteryState(row)]));
 }
 
+/**
+ * A plan's tasks as `{conceptId, scheduledDate}` — the shape `computeDrift`
+ * compares. Tasks carry their concept through `task_concepts`, so the join is
+ * what makes the previous and candidate plans comparable at all.
+ */
+async function loadPlanTaskSnapshots(
+  userId: string,
+  planId: string,
+): Promise<{ conceptId: string; scheduledDate: string }[]> {
+  const db = getDb();
+  const taskRows = await planningRepository(db).listTasksForPlan(userId, planId);
+  if (taskRows.length === 0) return [];
+
+  const links = await planningRepository(db).listTaskConceptsForTasks(
+    userId,
+    taskRows.map((t) => t.id),
+  );
+  const conceptByTaskId = new Map(
+    links.filter((l) => l.isPrimary).map((l) => [l.taskId, l.conceptId]),
+  );
+
+  return taskRows.flatMap((t) => {
+    const conceptId = conceptByTaskId.get(t.id);
+    return conceptId ? [{ conceptId, scheduledDate: t.scheduledDate }] : [];
+  });
+}
+
 async function persistPlan(
   userId: string,
   goal: GoalRow,
   version: number,
   reason: string,
   materials: PlanMaterials,
+  /**
+   * Tasks on the outgoing plan that were due and not done (§10.4). Retired as
+   * `rescheduled` rather than `cancelled` so the learner's history records the
+   * miss. Empty for the initial plan, which supersedes nothing.
+   */
+  missedTaskIds: string[] = [],
 ): Promise<PlanRow> {
   const db = getDb();
   const memoryStates = await memoryRepository(db).listAllMemoryStates(userId);
@@ -206,6 +258,7 @@ async function persistPlan(
       Math.max(1, materials.fullHorizonCapacity.length),
     learner: { reliability: 1.0, pace: 1.0 }, // E-1: cold start until a minimum sample exists
     config: DEFAULT_PRIORITY_CONFIG,
+    inFlightConceptIds: materials.inFlightConceptIds,
   });
 
   const feasibilityConcepts = toFeasibilityConcepts(
@@ -227,7 +280,18 @@ async function persistPlan(
     const planning = planningRepository(tx);
 
     const activePlan = await planning.findActive(userId, goal.id);
-    if (activePlan) await planning.supersede(userId, activePlan.id);
+    if (activePlan) {
+      await planning.supersede(userId, activePlan.id);
+      // In the same transaction as the supersede, so there is no instant in
+      // which both versions' tasks are live. Every task read path filters by
+      // goal, not by plan, so a gap here is a doubled workload on screen.
+      const retired = await planning.retireSupersededTasks(userId, activePlan.id, missedTaskIds);
+      logger.info('superseded plan tasks retired', {
+        goalId: goal.id,
+        supersededVersion: activePlan.version,
+        ...retired,
+      });
+    }
 
     const plan = await planning.create({
       goalId: goal.id,
@@ -371,27 +435,27 @@ export async function regeneratePlan(
   const activePlan = await planningRepository(db).findActive(user.id, goalId);
   const materials = await loadPlanMaterials(user.id, goal);
 
-  // §10.4 debt model: identify missed work so it can be marked honestly, but
-  // never shift it forward — the scheduler below re-derives placement from
-  // current state, and a missed concept simply re-enters the candidate pool.
-  if (activePlan) {
-    const pending = await planningRepository(db).listPendingTasks(user.id, goalId);
-    const missed = identifyMissedTasks(
-      pending.map((t) => ({
-        taskId: t.id,
-        conceptId: t.id, // task-level identification is sufficient here
-        scheduledDate: t.scheduledDate,
-        status: t.status,
-      })),
-      materials.today.toISOString().slice(0, 10),
-    );
-    if (missed.length > 0) {
-      await planningRepository(db).markMissedRescheduled(
-        user.id,
-        missed.map((m) => m.taskId),
-      );
-    }
-  }
+  /**
+   * §10.4 debt model: name the missed work, but do not write anything yet.
+   *
+   * This used to mark the rows `rescheduled` here, before the materiality gate
+   * had decided anything. When the gate then declined to commit — immaterial
+   * diff, or churn budget spent — the outgoing tasks had already been retired
+   * and no new plan replaced them, so the work simply vanished from the
+   * learner's queue. The marking belongs with the commit, inside the same
+   * transaction as the supersede, and that is where it now happens.
+   */
+  const missedTaskIds = activePlan
+    ? identifyMissedTasks(
+        (await planningRepository(db).listPendingTasks(user.id, goalId)).map((t) => ({
+          taskId: t.id,
+          conceptId: t.id, // identification is by task; the concept is irrelevant here
+          scheduledDate: t.scheduledDate,
+          status: t.status,
+        })),
+        materials.today.toISOString().slice(0, 10),
+      ).map((m) => m.taskId)
+    : [];
 
   const nextVersion = activePlan ? activePlan.version + 1 : 1;
 
@@ -419,6 +483,7 @@ export async function regeneratePlan(
       Math.max(1, materials.fullHorizonCapacity.length),
     learner: { reliability: 1.0, pace: 1.0 },
     config: DEFAULT_PRIORITY_CONFIG,
+    inFlightConceptIds: materials.inFlightConceptIds,
   });
 
   // Same reason: the committed plan's feasibility is computed with real reps,
@@ -435,12 +500,22 @@ export async function regeneratePlan(
     DEFAULT_PRIORITY_CONFIG.feasibilityBufferFraction,
   );
 
-  const previousTasks = activePlan
-    ? (await planningRepository(db).listTasksForPlan(user.id, activePlan.id)).map((t) => ({
-        conceptId: t.id,
-        scheduledDate: t.scheduledDate,
-      }))
-    : [];
+  /**
+   * The outgoing plan, keyed the same way as the candidate: by **concept**.
+   *
+   * This mapped `conceptId: t.id` — the task row's own uuid — while the
+   * candidate side below is keyed by real concept ids. The two sets were
+   * therefore disjoint by construction, so `computeDrift`'s first two
+   * components (task-date change, next-7-day concept churn) both returned a
+   * flat 1.0 no matter what the scheduler produced. Drift could never fall
+   * below 0.5 against a materiality threshold of 0.15, which meant the gate
+   * declared *every* candidate material and §10.3's "discard a plan that barely
+   * differs" never once fired. Two byte-identical plans scored 0.5.
+   *
+   * The number was also being logged and returned to callers as if it meant
+   * something, which is the worse half of the bug.
+   */
+  const previousTasks = activePlan ? await loadPlanTaskSnapshots(user.id, activePlan.id) : [];
   const newTasks = scheduling.days.flatMap((d) =>
     d.tasks.map((t) => ({ conceptId: t.conceptId, scheduledDate: d.date })),
   );
@@ -490,7 +565,14 @@ export async function regeneratePlan(
     };
   }
 
-  const plan = await persistPlan(user.id, goal, nextVersion, reason ?? 'user_request', materials);
+  const plan = await persistPlan(
+    user.id,
+    goal,
+    nextVersion,
+    reason ?? 'user_request',
+    materials,
+    missedTaskIds,
+  );
   return { committed: true, reason: decision.reason, plan, drift: decision.drift };
 }
 

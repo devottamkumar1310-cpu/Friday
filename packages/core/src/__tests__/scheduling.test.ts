@@ -119,6 +119,80 @@ describe('core/scheduling — invariants (IMPLEMENTATION_ROADMAP §7.3 test 1)',
     expect(stillMissing).toHaveLength(0);
   });
 
+  it('schedules higher exam weight first when nothing else differs', () => {
+    // The controlled version of "exam weight is prioritised". End-to-end the
+    // claim is hard to isolate, because prerequisite order legitimately puts
+    // low-weight foundations before high-weight advanced work — so it gets
+    // proven here, where everything except the weight can be held equal.
+    const plan = generatePlan(
+      baseInput({
+        concepts: [
+          node('low', { examWeight: 0.1 }),
+          node('high', { examWeight: 0.9 }),
+          node('mid', { examWeight: 0.5 }),
+        ],
+      }),
+    );
+
+    const placedOrder = plan.days
+      .flatMap((d) => d.tasks.map((t) => t.conceptId))
+      .filter((id) => ['low', 'mid', 'high'].includes(id));
+
+    expect(placedOrder).toStrictEqual(['high', 'mid', 'low']);
+  });
+
+  it('carries exam weight into the persisted impact factor', () => {
+    // Guards the wire between the two: a plan can order correctly and still
+    // record a factor breakdown that does not mention why.
+    const plan = generatePlan(
+      baseInput({ concepts: [node('a', { examWeight: 0.9 }), node('b', { examWeight: 0.1 })] }),
+    );
+    const tasks = plan.days.flatMap((d) => d.tasks);
+    const a = tasks.find((t) => t.conceptId === 'a');
+    const b = tasks.find((t) => t.conceptId === 'b');
+
+    expect(a?.structuralFactors.impact).toBeGreaterThan(b!.structuralFactors.impact);
+  });
+
+  it('does not schedule a concept the learner already has work in flight on', () => {
+    // Regression: a re-plan preserves an in-progress task *and* used to queue a
+    // second task for the same concept, so the learner saw it twice.
+    const withoutFlag = generatePlan(baseInput({ concepts: [node('a'), node('b')] }));
+    expect(withoutFlag.days.flatMap((d) => d.tasks).map((t) => t.conceptId)).toContain('a');
+
+    const plan = generatePlan(
+      baseInput({ concepts: [node('a'), node('b')], inFlightConceptIds: new Set(['a']) }),
+    );
+    const placed = plan.days.flatMap((d) => d.tasks).map((t) => t.conceptId);
+
+    expect(placed).not.toContain('a');
+    expect(placed).toContain('b');
+  });
+
+  it('still honours a prerequisite that is in flight, rather than opening its dependents', () => {
+    // The in-flight concept stays in the graph precisely so readiness keeps
+    // working; dropping it from `concepts` instead would silently unblock
+    // everything downstream of it.
+    const plan = generatePlan(
+      baseInput({
+        concepts: [node('prereq'), node('dependent')],
+        edges: [
+          {
+            fromConceptId: 'prereq',
+            toConceptId: 'dependent',
+            type: 'prerequisite_of',
+            strength: 0.9,
+          },
+        ],
+        inFlightConceptIds: new Set(['prereq']),
+      }),
+    );
+    const placed = plan.days.flatMap((d) => d.tasks).map((t) => t.conceptId);
+
+    expect(placed).not.toContain('prereq');
+    expect(placed).not.toContain('dependent');
+  });
+
   it('assigns structural factors including a plan-position-derived urgency (M0 §1.1)', () => {
     const concepts = [node('a'), node('b')];
     const result = generatePlan(baseInput({ concepts }));
