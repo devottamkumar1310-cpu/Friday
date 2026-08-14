@@ -42,6 +42,23 @@ export function goalsRepository(db: Executor) {
       return db.select().from(goals).where(eq(goals.userId, userId));
     },
 
+    /**
+     * Updates a goal's planner constraints. Scoped by `userId` like everything
+     * else here, so there is no call shape that can reach another learner's row.
+     */
+    async update(
+      userId: string,
+      goalId: string,
+      patch: Partial<Pick<GoalRow, 'title' | 'description' | 'targetDate' | 'targetWeeklyMinutes'>>,
+    ): Promise<GoalRow | undefined> {
+      const [row] = await db
+        .update(goals)
+        .set({ ...patch, updatedAt: new Date() })
+        .where(and(eq(goals.id, goalId), eq(goals.userId, userId)))
+        .returning();
+      return row;
+    },
+
     async activate(userId: string, goalId: string): Promise<void> {
       await db
         .update(goals)

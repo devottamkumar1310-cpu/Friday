@@ -8,6 +8,7 @@ import {
   ERROR_CODES,
   type CreateGoalRequest,
   type UpdateConceptStatusRequest,
+  type UpdateGoalRequest,
 } from '@friday/contracts';
 import {
   canonicalConceptsRepository,
@@ -22,7 +23,7 @@ import {
   type UserRow,
 } from '@friday/db';
 import { logger } from '@friday/observability';
-import { generateInitialPlan } from '../planning/planning.service';
+import { generateInitialPlan, replanQuietly } from '../planning/planning.service';
 import { EVENTS, trackEvent } from '../platform/analytics.service';
 
 /**
@@ -271,6 +272,79 @@ export async function updateConceptStatusWithMastery(
   const concept = await updateConceptStatus(user, conceptId, input);
   const masteryState = await memoryRepository(getDb()).getMasteryState(user.id, conceptId);
   return { concept, mastery: masteryState ? Number(masteryState.mastery) : null };
+}
+
+/**
+ * Change a goal's planner constraints, and make the change actually mean
+ * something.
+ *
+ * The exam date is the most consequential number in the product — it sets the
+ * horizon every projection, verdict and priority is computed against — and it
+ * was the one number a learner could not change. Exams move. A learner sitting
+ * on an obsolete date had a planner confidently optimising towards a day that
+ * no longer existed, with no route out short of abandoning their history.
+ *
+ * Two things make this safe to allow:
+ *
+ *   **Evidence is untouched.** Mastery, memory and session rows are keyed to
+ *   concepts; the curriculum is not editable here, so nothing they have earned
+ *   is orphaned or rewritten. Moving the date changes what FRIDAY *plans*, never
+ *   what the learner *did*.
+ *
+ *   **The plan is re-derived, not left stale.** Writing the row without a
+ *   re-plan would be the availability bug again — a saved constraint the
+ *   planner never read. This fires the same `constraint` trigger, which is
+ *   exempt from the churn budget precisely because the learner asked for it.
+ */
+export async function updateGoal(
+  user: UserRow,
+  goalId: string,
+  input: UpdateGoalRequest,
+): Promise<GoalRow> {
+  const db = getDb();
+  const goal = await goalsRepository(db).findById(user.id, goalId);
+  if (!goal) throw ApiError.notFound();
+
+  if (input.targetDate !== undefined) {
+    if (input.targetDate <= today()) {
+      throw new ApiError(ERROR_CODES.TARGET_DATE_IN_PAST); // E-7, same rule as creation
+    }
+    // `goals_target_after_start` is a table-level check; failing it would
+    // surface as a 500. A learner moving an exam earlier than the day they
+    // started studying is a validation error, not a server error.
+    if (input.targetDate <= goal.startDate) {
+      throw new ApiError(
+        ERROR_CODES.VALIDATION_FAILED,
+        `The target date must be after the goal's start date (${goal.startDate}).`,
+      );
+    }
+  }
+
+  const updated = await goalsRepository(db).update(user.id, goalId, {
+    ...(input.title !== undefined ? { title: input.title } : {}),
+    ...(input.description !== undefined ? { description: input.description } : {}),
+    ...(input.targetDate !== undefined ? { targetDate: input.targetDate } : {}),
+    ...(input.targetWeeklyMinutes !== undefined
+      ? { targetWeeklyMinutes: input.targetWeeklyMinutes }
+      : {}),
+  });
+  if (!updated) throw ApiError.notFound();
+
+  logger.info('goal updated', {
+    goalId,
+    changed: Object.keys(input),
+    targetDate: updated.targetDate,
+  });
+  trackEvent(user.id, EVENTS.goalUpdated, { changed: Object.keys(input).sort().join(',') });
+
+  // Only a horizon or capacity change can alter what the planner would decide;
+  // renaming a goal must not churn the plan.
+  const affectsPlanning = input.targetDate !== undefined || input.targetWeeklyMinutes !== undefined;
+  if (affectsPlanning && updated.status === 'active') {
+    await replanQuietly(user, goalId, 'goal_changed', 'constraint');
+  }
+
+  return updated;
 }
 
 export function toWireGoal(goal: GoalRow) {

@@ -28,6 +28,46 @@ export const CreateGoalRequestSchema = z
 
 export type CreateGoalRequest = z.infer<typeof CreateGoalRequestSchema>;
 
+/**
+ * The parts of a goal a learner may change after creating it.
+ *
+ * Goals were write-once: `POST` and `GET`, no `PATCH` anywhere, and no `update`
+ * on the repository. A learner whose exam moved had a planner optimising
+ * towards a date that no longer existed, and no way to say so — the single most
+ * consequential input in the product was the one input they could not correct.
+ *
+ * What is editable here, and what is deliberately not:
+ *
+ *   `targetDate`, `targetWeeklyMinutes`, `title`, `description` are pure
+ *   planner inputs. Changing them re-derives a plan and cannot touch a single
+ *   piece of evidence, because mastery, memory and sessions are keyed to
+ *   concepts, and the concepts do not move.
+ *
+ *   The **curriculum** — the subject, the target exam, the concept set — is
+ *   not editable, and should not be. Swapping it would orphan every mastery and
+ *   FSRS row the learner has earned against concepts that no longer belong to
+ *   the goal. A learner changing what they are studying is starting something
+ *   new, and `POST /v1/goals` already expresses that correctly: the old goal
+ *   keeps its history intact, and nothing is silently rewritten.
+ *
+ * At least one field must be present, so an empty body is a client bug rather
+ * than a silent no-op re-plan.
+ */
+export const UpdateGoalRequestSchema = z
+  .object({
+    title: z.string().trim().min(1).max(200).optional(),
+    description: z.string().max(2000).nullable().optional(),
+    targetDate: DateOnlySchema.optional(),
+    targetWeeklyMinutes: z.number().int().min(30).max(10_080).optional(),
+  })
+  .strict()
+  .refine((patch) => Object.keys(patch).length > 0, {
+    message: 'Provide at least one field to update.',
+  })
+  .openapi('UpdateGoalRequest');
+
+export type UpdateGoalRequest = z.infer<typeof UpdateGoalRequestSchema>;
+
 export const GoalSchema = z
   .object({
     id: UuidSchema,

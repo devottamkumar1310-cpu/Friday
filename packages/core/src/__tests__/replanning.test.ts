@@ -19,6 +19,8 @@ describe('core/replanning — drift and materiality (§10.3)', () => {
       newProjectedCompletionDate: '2026-06-01',
       previousRequiredMinutes: 1000,
       newRequiredMinutes: 1000,
+      previousAvailableMinutes: 5000,
+      newAvailableMinutes: 5000,
       today: '2026-01-01',
     });
     expect(result.drift).toBe(0);
@@ -35,6 +37,8 @@ describe('core/replanning — drift and materiality (§10.3)', () => {
       newProjectedCompletionDate: null,
       previousRequiredMinutes: 1000,
       newRequiredMinutes: 1000,
+      previousAvailableMinutes: 5000,
+      newAvailableMinutes: 5000,
       today: '2026-01-01',
     });
     expect(isMaterial(drift, 'evidence', 0.15)).toBe(true);
@@ -50,6 +54,8 @@ describe('core/replanning — drift and materiality (§10.3)', () => {
       newProjectedCompletionDate: '2026-06-01',
       previousRequiredMinutes: 1000,
       newRequiredMinutes: 1010, // 1% change, well under 5%
+      previousAvailableMinutes: 5000,
+      newAvailableMinutes: 5000,
       today: '2026-01-01',
     });
     expect(isMaterial(drift, 'temporal', 0.15)).toBe(false);
@@ -77,6 +83,8 @@ describe('core/replanning — drift and materiality (§10.3)', () => {
       newProjectedCompletionDate: '2026-06-01',
       previousRequiredMinutes: 1000,
       newRequiredMinutes: 1000,
+      previousAvailableMinutes: 5000,
+      newAvailableMinutes: 5000,
       today: '2026-01-01',
     });
 
@@ -90,6 +98,37 @@ describe('core/replanning — drift and materiality (§10.3)', () => {
     expect(withinChurnBudget({ changesLast24h: 5, changesLast7d: 10 }, 'temporal', 1)).toBe(true);
   });
 
+  it('a horizon change is material even when the task list is identical', () => {
+    /**
+     * Regression for a goal edit that changed nothing the gate could see.
+     *
+     * Pulling an exam date in from 120 days to 21 leaves the fourteen-day task
+     * list untouched — the near horizon does not care about the far one while
+     * the work still fits — so drift scored 0.0425 and the re-plan was
+     * discarded. The committed plan went on reporting 7,200 available minutes
+     * and its original verdict, against the 1,260 minutes the learner actually
+     * had. Drift was measuring the demand side of feasibility and not the
+     * supply side.
+     */
+    const sameTasks = [{ conceptId: 'a', scheduledDate: '2026-01-05' }];
+    const drift = computeDrift({
+      previousTasks: sameTasks,
+      newTasks: sameTasks,
+      previousVerdict: 'on_track',
+      newVerdict: 'on_track',
+      previousProjectedCompletionDate: '2026-06-01',
+      newProjectedCompletionDate: '2026-06-01',
+      previousRequiredMinutes: 1000,
+      newRequiredMinutes: 1000,
+      previousAvailableMinutes: 7200,
+      newAvailableMinutes: 1260,
+      today: '2026-01-01',
+    });
+
+    expect(drift.components.availableMinutesChangeFraction).toBeGreaterThan(0.8);
+    expect(isMaterial(drift, 'constraint', 0.15)).toBe(true);
+  });
+
   it('explicit triggers are always material, even with zero drift', () => {
     const drift = computeDrift({
       previousTasks: [],
@@ -100,6 +139,8 @@ describe('core/replanning — drift and materiality (§10.3)', () => {
       newProjectedCompletionDate: null,
       previousRequiredMinutes: 100,
       newRequiredMinutes: 100,
+      previousAvailableMinutes: 5000,
+      newAvailableMinutes: 5000,
       today: '2026-01-01',
     });
     expect(isMaterial(drift, 'explicit', 0.15)).toBe(true);
@@ -145,6 +186,8 @@ describe('core/replanning — the full gate (§10.2)', () => {
         newProjectedCompletionDate: '2026-06-01',
         previousRequiredMinutes: 1000,
         newRequiredMinutes: 1000,
+        previousAvailableMinutes: 5000,
+        newAvailableMinutes: 5000,
         today: '2026-01-01',
       },
       'temporal',
@@ -166,6 +209,8 @@ describe('core/replanning — the full gate (§10.2)', () => {
         newProjectedCompletionDate: null,
         previousRequiredMinutes: 1000,
         newRequiredMinutes: 500,
+        previousAvailableMinutes: 5000,
+        newAvailableMinutes: 5000,
         today: '2026-01-01',
       },
       'explicit',

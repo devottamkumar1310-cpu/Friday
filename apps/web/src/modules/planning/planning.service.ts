@@ -44,9 +44,12 @@ const AUTOMATIC_REASONS = new Set([
   'session_completed',
   'session_abandoned',
   'new_day',
-  // A constraint change the learner made deliberately, but the *re-plan* is
-  // still automatic, so it spends from the same budget as the rest.
+  // Constraint changes the learner made deliberately. The *re-plan* is still
+  // automatic, so it is counted here; the budget itself exempts `constraint`,
+  // because a plan that contradicts a fact the learner just asserted is
+  // incorrect rather than merely stale.
   'availability_changed',
+  'goal_changed',
 ]);
 
 function toCoreConcepts(rows: ConceptRow[]): CoreConceptNode[] {
@@ -582,6 +585,8 @@ export async function regeneratePlan(
       newProjectedCompletionDate: newFeasibility.projectedCompletionDate,
       previousRequiredMinutes: activePlan?.requiredMinutes ?? 0,
       newRequiredMinutes: newFeasibility.requiredMinutes,
+      previousAvailableMinutes: activePlan?.availableMinutes ?? 0,
+      newAvailableMinutes: newFeasibility.availableMinutes,
       today: materials.today.toISOString().slice(0, 10),
     },
     trigger,

@@ -26,6 +26,22 @@ export interface DriftInput {
   newProjectedCompletionDate: string | null;
   previousRequiredMinutes: number;
   newRequiredMinutes: number;
+  /**
+   * Capacity across the whole horizon, which is the other half of feasibility.
+   *
+   * Drift measured only the *required* side, so a change that moved only the
+   * *available* side was invisible to it. Pulling an exam date in from 120 days
+   * to 21 scored 0.0425 — immaterial — because the fourteen-day task list
+   * genuinely does not change when the horizon shrinks but the work still fits.
+   *
+   * The task list was not the thing that went wrong. A plan row also stores the
+   * verdict, the slack and the projected completion date, all derived from the
+   * horizon; leaving it committed meant the learner's feasibility panel reported
+   * 7,200 available minutes against the 1,260 they actually had. Measuring one
+   * side of a two-sided calculation was simply an omission.
+   */
+  previousAvailableMinutes: number;
+  newAvailableMinutes: number;
   today: string;
 }
 
@@ -37,6 +53,7 @@ export interface DriftResult {
     next7DaysConceptChangeFraction: number;
     projectedCompletionShiftDays: number;
     requiredMinutesChangeFraction: number;
+    availableMinutesChangeFraction: number;
   };
 }
 
@@ -67,8 +84,10 @@ function jaccardDistance(a: Set<string>, b: Set<string>): number {
 }
 
 /**
- * §10.3 — weighted combination of four signals. Weights are equal by default
- * (0.25 each); this is the aggregate `drift` used by the materiality gate.
+ * §10.3 — weighted combination of the drift signals, equally weighted; this is
+ * the aggregate `drift` the materiality gate reads. §10.3 names four; capacity
+ * is a fifth, added because measuring only the demand half of a feasibility
+ * calculation let a horizon change pass as no change. See `DriftInput`.
  */
 export function computeDrift(input: DriftInput): DriftResult {
   const prevByConcept = new Map(input.previousTasks.map((t) => [t.conceptId, t.scheduledDate]));
@@ -101,19 +120,30 @@ export function computeDrift(input: DriftInput): DriftResult {
         input.previousRequiredMinutes
       : 0;
 
+  const availableMinutesChangeFraction =
+    input.previousAvailableMinutes > 0
+      ? Math.abs(input.newAvailableMinutes - input.previousAvailableMinutes) /
+        input.previousAvailableMinutes
+      : 0;
+
   const verdictChanged = input.previousVerdict !== input.newVerdict;
 
-  // Normalise the completion-shift and required-minutes signals against the
-  // thresholds named in §10.3 (>3 days, >5%) so all four components live on
-  // comparable [0,1]-ish scales before averaging.
+  // Normalise the completion-shift and minutes signals against the thresholds
+  // named in §10.3 (>3 days, >5%) so every component lives on a comparable
+  // [0,1]-ish scale before averaging.
   const normalisedShift = Math.min(1, projectedCompletionShiftDays / 3);
-  const normalisedMinutesChange = Math.min(1, requiredMinutesChangeFraction / 0.05);
+  const normalisedRequiredChange = Math.min(1, requiredMinutesChangeFraction / 0.05);
+  const normalisedAvailableChange = Math.min(1, availableMinutesChangeFraction / 0.05);
 
+  // Five equal signals. Capacity joined the set late — see `DriftInput` — and
+  // carries the same weight as the demand side it is compared against, because
+  // a feasibility verdict is only ever as good as the weaker of the two.
   const drift =
-    0.25 * taskDateChangeFraction +
-    0.25 * next7Change +
-    0.25 * normalisedShift +
-    0.25 * normalisedMinutesChange;
+    0.2 * taskDateChangeFraction +
+    0.2 * next7Change +
+    0.2 * normalisedShift +
+    0.2 * normalisedRequiredChange +
+    0.2 * normalisedAvailableChange;
 
   return {
     drift,
@@ -123,6 +153,7 @@ export function computeDrift(input: DriftInput): DriftResult {
       next7DaysConceptChangeFraction: next7Change,
       projectedCompletionShiftDays,
       requiredMinutesChangeFraction,
+      availableMinutesChangeFraction,
     },
   };
 }
