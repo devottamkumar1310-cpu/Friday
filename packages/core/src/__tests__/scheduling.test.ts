@@ -169,10 +169,21 @@ describe('core/scheduling — invariants (IMPLEMENTATION_ROADMAP §7.3 test 1)',
     expect(placed).toContain('b');
   });
 
-  it('still honours a prerequisite that is in flight, rather than opening its dependents', () => {
-    // The in-flight concept stays in the graph precisely so readiness keeps
-    // working; dropping it from `concepts` instead would silently unblock
-    // everything downstream of it.
+  it('lets dependents follow a prerequisite the learner is already working on', () => {
+    /**
+     * An in-flight concept counts as covered, not as absent.
+     *
+     * The first implementation filtered in-flight concepts out of the eligible
+     * queue, which stopped the duplicate task but also erased them from the
+     * graph's notion of what was handled — so every dependent failed its
+     * prerequisite check. Because a curriculum typically hangs off one or two
+     * roots, that turned "the learner started the first task" into **an empty
+     * plan**: a database-backed availability change produced a plan with no
+     * tasks in it at all.
+     *
+     * The learner is working through the prerequisite right now. Its dependents
+     * are exactly what should come next.
+     */
     const plan = generatePlan(
       baseInput({
         concepts: [node('prereq'), node('dependent')],
@@ -189,8 +200,11 @@ describe('core/scheduling — invariants (IMPLEMENTATION_ROADMAP §7.3 test 1)',
     );
     const placed = plan.days.flatMap((d) => d.tasks).map((t) => t.conceptId);
 
-    expect(placed).not.toContain('prereq');
-    expect(placed).not.toContain('dependent');
+    expect(placed, 'no second task for work already underway').not.toContain('prereq');
+    expect(placed, 'its dependents are unblocked, not stranded').toContain('dependent');
+
+    // And it is not reported as dropped work — it is being done.
+    expect(plan.unscheduledConceptIds).not.toContain('prereq');
   });
 
   it('assigns structural factors including a plan-position-derived urgency (M0 §1.1)', () => {

@@ -181,13 +181,27 @@ export interface ChurnBudgetState {
  * This cannot become a churn hole, because it is self-extinguishing: the commit
  * it permits is the one that retires the missed work, after which there is no
  * missed work and the exemption stops applying.
+ *
+ * `constraint` is exempt on different grounds. The budget exists to stop the
+ * plan reshuffling itself under a learner who is not asking for it; a learner
+ * editing their own availability *is* asking. Measured: cutting availability
+ * from two hours a day to thirty minutes committed, and raising it back to
+ * three hours minutes later returned `churn_budget_exceeded` — so the plan went
+ * on describing a thirty-minute week the learner had already told us was wrong,
+ * and the freed-up time was silently thrown away.
+ *
+ * Availability is not a preference about the plan, it is a fact about the
+ * learner's life, and a plan that contradicts it is not stale but incorrect.
+ * The materiality gate still stops a settings form that posts on every blur:
+ * saving the same numbers produces the same plan, which is immaterial and does
+ * not commit.
  */
 export function withinChurnBudget(
   state: ChurnBudgetState,
   trigger: ReplanTriggerClass,
   missedTaskCount = 0,
 ): boolean {
-  if (trigger === 'explicit' || missedTaskCount > 0) return true;
+  if (trigger === 'explicit' || trigger === 'constraint' || missedTaskCount > 0) return true;
   return state.changesLast24h < 1 && state.changesLast7d < 3;
 }
 

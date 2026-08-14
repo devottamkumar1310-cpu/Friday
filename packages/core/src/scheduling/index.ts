@@ -187,7 +187,7 @@ export function generatePlan(input: SchedulingInput): SchedulingResult {
   const inFlight = input.inFlightConceptIds ?? new Set<string>();
   const eligibleQueue = order.filter((id) => {
     const c = graph.nodes.get(id);
-    if (!c || inFlight.has(id)) return false;
+    if (!c) return false;
     return c.status !== 'excluded' && c.status !== 'mastered' && c.status !== 'already_known';
   });
 
@@ -204,7 +204,25 @@ export function generatePlan(input: SchedulingInput): SchedulingResult {
       .map(([conceptId]) => conceptId),
   );
 
-  const scheduledConceptIds = new Set<string>();
+  /**
+   * Seeded with the in-flight concepts, which is what makes them behave
+   * correctly on both counts at once.
+   *
+   * Every candidate filter below already skips what is in this set, so an
+   * in-flight concept gets no second task — the duplication this input exists
+   * to prevent. And `isPlaceable`/`prerequisiteInputs` treat membership as
+   * "handled", so a concept the learner is *currently working through* satisfies
+   * its dependents' prerequisites.
+   *
+   * Filtering them out of the eligible queue instead — the obvious first
+   * implementation — got the first half right and the second half catastrophically
+   * wrong. The concept vanished from the graph's notion of what was covered, so
+   * every dependent failed its prerequisite check, and because the seeded
+   * curriculum hangs almost entirely off one root, starting the first task and
+   * then changing availability produced a **completely empty plan**. The learner
+   * opens the app to nothing to do.
+   */
+  const scheduledConceptIds = new Set<string>(inFlight);
   const scheduledDateOf = new Map<string, string>();
 
   for (const day of days) {
