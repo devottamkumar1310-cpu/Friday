@@ -123,6 +123,34 @@ export function LiveIntelligencePanel({
       })
     : null;
 
+  /**
+   * A sizing claim is only shown when the recommendation actually honours it.
+   *
+   * `targetSessionMinutes` is passed to the planner as the time budget, and the
+   * selector walks the ranking for the first task that fits it — but when
+   * *nothing* fits, `core/priority` deliberately returns the top candidate
+   * whole rather than substituting a lesser one (§7.2 step 3). That is the
+   * right call for the ranking and the wrong thing to narrate: the panel was
+   * rendering "Held your sessions at about 15 minutes" directly above a task
+   * labelled "50 min", in the same screenful.
+   *
+   * A learner reading a system contradict itself about the one thing it just
+   * claimed to have personalised does not conclude that a heuristic hit an edge
+   * case. They conclude it is making things up, and every other claim on the
+   * screen goes with it.
+   *
+   * So the decision is dropped rather than dressed up. FRIDAY still adapted the
+   * budget — the ranking really was fitted against it — it simply has nothing
+   * short enough to offer today, and the honest move is to say less. Restoring
+   * the claim needs the planner to size tasks to the session, not the panel to
+   * word it more carefully.
+   */
+  const sizingIsHonoured =
+    action === null || action.estimatedMinutes <= profile.targetSessionMinutes;
+  const decisions = sizingIsHonoured
+    ? profile.decisions
+    : profile.decisions.filter((d) => !/minutes\./.test(d.change));
+
   return (
     // Single column at every width. `max-w-xl` rather than the layout's full
     // `max-w-5xl`: this is one conversation, and a conversation that spans a
@@ -165,7 +193,7 @@ export function LiveIntelligencePanel({
           <Beat
             icon={<Check className="size-4" aria-hidden />}
             label="What I changed"
-            items={profile.decisions.map((d) => ({
+            items={decisions.map((d) => ({
               key: d.id,
               primary: d.change,
               secondary: d.because,
