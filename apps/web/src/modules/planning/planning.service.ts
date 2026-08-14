@@ -587,6 +587,7 @@ export async function regeneratePlan(
     trigger,
     DEFAULT_PRIORITY_CONFIG.driftMaterialityThreshold,
     churn,
+    missedTaskIds.length,
   );
 
   if (!decision.shouldCommit) {

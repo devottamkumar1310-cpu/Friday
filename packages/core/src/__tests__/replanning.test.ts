@@ -55,6 +55,41 @@ describe('core/replanning — drift and materiality (§10.3)', () => {
     expect(isMaterial(drift, 'temporal', 0.15)).toBe(false);
   });
 
+  it('missed work is material however small the drift, and bypasses the churn budget', () => {
+    /**
+     * Regression for the most ordinary failure a learner can hit.
+     *
+     * Missing exactly one day produces a candidate that is the same plan shifted
+     * a day — drift ≈ 0.025 against a 0.15 threshold. The gate correctly scored
+     * it as no change and declined to commit, so the missed task stayed
+     * `pending` on yesterday's date and the learner opened the app to overdue
+     * work that §10.4 promises cannot exist.
+     *
+     * The gate's question — "is the candidate different enough to be worth the
+     * churn?" — is the wrong one when the *current* plan is the problem.
+     */
+    const drift = computeDrift({
+      previousTasks: [{ conceptId: 'a', scheduledDate: '2026-01-05' }],
+      newTasks: [{ conceptId: 'a', scheduledDate: '2026-01-05' }],
+      previousVerdict: 'on_track',
+      newVerdict: 'on_track',
+      previousProjectedCompletionDate: '2026-06-01',
+      newProjectedCompletionDate: '2026-06-01',
+      previousRequiredMinutes: 1000,
+      newRequiredMinutes: 1000,
+      today: '2026-01-01',
+    });
+
+    expect(drift.drift).toBeLessThan(0.15);
+    expect(isMaterial(drift, 'temporal', 0.15, 0)).toBe(false);
+    expect(isMaterial(drift, 'temporal', 0.15, 1)).toBe(true);
+
+    // A spent budget must not be able to strand the missed work either — that
+    // would only move the failure to "you also finished a session yesterday".
+    expect(withinChurnBudget({ changesLast24h: 5, changesLast7d: 10 }, 'temporal', 0)).toBe(false);
+    expect(withinChurnBudget({ changesLast24h: 5, changesLast7d: 10 }, 'temporal', 1)).toBe(true);
+  });
+
   it('explicit triggers are always material, even with zero drift', () => {
     const drift = computeDrift({
       previousTasks: [],

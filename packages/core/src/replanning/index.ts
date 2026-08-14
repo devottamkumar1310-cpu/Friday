@@ -133,13 +133,32 @@ export type ReplanTriggerClass =
 /**
  * §10.3: `material if drift > 0.15 OR verdict changed OR trigger is explicit`.
  * Explicit user/Coach-confirmed requests always regenerate (§10.1 table).
+ *
+ * Plus one condition §10.3 does not name, because it is not about the candidate
+ * at all: **work the learner has already missed makes a re-plan material
+ * regardless of drift.**
+ *
+ * The gate asks "does the new plan differ enough to be worth disturbing the
+ * learner?" That is the right question about a *candidate*, and the wrong
+ * question when the *current* plan is stale. Missing exactly one day — the most
+ * ordinary thing a learner ever does — produces a candidate that is the same
+ * plan shifted a day, which scores a drift of about 0.025 against a threshold
+ * of 0.15. Measured end to end, the new-day trigger fired, computed a correct
+ * and tiny drift, and declined to commit; the missed task stayed `pending` on
+ * yesterday's date, and the learner opened the app to overdue work that §10.4
+ * promises can never exist.
+ *
+ * A plan carrying overdue work is not a plan worth protecting from churn. It is
+ * the thing the re-plan is for.
  */
 export function isMaterial(
   drift: DriftResult,
   trigger: ReplanTriggerClass,
   materialityThreshold: number,
+  missedTaskCount = 0,
 ): boolean {
   if (trigger === 'explicit' || trigger === 'deadline') return true;
+  if (missedTaskCount > 0) return true;
   return drift.drift > materialityThreshold || drift.verdictChanged;
 }
 
@@ -152,9 +171,23 @@ export interface ChurnBudgetState {
 /**
  * §10.3 churn budget: at most one automatic change per 24h, three per week.
  * Explicit requests are never rate-limited.
+ *
+ * Retiring missed work is not rate-limited either, for the same reason it is
+ * always material: it repairs an invariant rather than expressing a preference.
+ * Letting the budget veto it would only move the failure — the learner would
+ * still be looking at yesterday's overdue task, now because they had also
+ * finished a session the previous afternoon.
+ *
+ * This cannot become a churn hole, because it is self-extinguishing: the commit
+ * it permits is the one that retires the missed work, after which there is no
+ * missed work and the exemption stops applying.
  */
-export function withinChurnBudget(state: ChurnBudgetState, trigger: ReplanTriggerClass): boolean {
-  if (trigger === 'explicit') return true;
+export function withinChurnBudget(
+  state: ChurnBudgetState,
+  trigger: ReplanTriggerClass,
+  missedTaskCount = 0,
+): boolean {
+  if (trigger === 'explicit' || missedTaskCount > 0) return true;
   return state.changesLast24h < 1 && state.changesLast7d < 3;
 }
 
@@ -202,15 +235,21 @@ export function decideReplan(
   trigger: ReplanTriggerClass,
   materialityThreshold: number,
   churn: ChurnBudgetState,
+  /** Overdue, un-started tasks on the outgoing plan (§10.4). */
+  missedTaskCount = 0,
 ): ReplanDecision {
   const drift = computeDrift(input);
-  const material = isMaterial(drift, trigger, materialityThreshold);
+  const material = isMaterial(drift, trigger, materialityThreshold, missedTaskCount);
 
   if (!material) {
     return { shouldCommit: false, reason: 'immaterial', drift };
   }
-  if (!withinChurnBudget(churn, trigger)) {
+  if (!withinChurnBudget(churn, trigger, missedTaskCount)) {
     return { shouldCommit: false, reason: 'churn_budget_exceeded', drift };
   }
-  return { shouldCommit: true, reason: `material (${trigger})`, drift };
+  return {
+    shouldCommit: true,
+    reason: missedTaskCount > 0 ? `material (missed_work)` : `material (${trigger})`,
+    drift,
+  };
 }
