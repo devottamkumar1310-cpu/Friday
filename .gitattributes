@@ -1,0 +1,26 @@
+# Line endings are normalised to LF everywhere, in the repository and in the
+# working tree.
+#
+# Without this file, `core.autocrlf=true` — the Windows default — checks every
+# text file out with CRLF endings. Prettier's `endOfLine` default is `lf`, so
+# `pnpm format:check` then failed on 42 files that were byte-identical to their
+# formatted output apart from carriage returns. That is a broken gate rather
+# than a formatting backlog: it reported real problems and environmental noise
+# in the same list, so the noise hid the one file (README.md) that genuinely
+# needed reformatting.
+#
+# Running `prettier --write` across those files would have fixed nothing
+# durably — the next checkout on a Windows machine would reintroduce every CRLF.
+# Declaring the convention here fixes it for every contributor and every CI
+# runner at once.
+* text=auto eol=lf
+
+# Binaries must never be touched.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.pdf binary

@@ -21,8 +21,8 @@ The architecture has been designed, documented, reviewed, corrected, and frozen.
 
 These seven documents are the project's source of truth. Read them in order.
 
-| #   | Document                                               | Answers                                                                                         |
-| --- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| #   | Document                                                    | Answers                                                                                         |
+| --- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | 1   | [PROJECT_VISION.md](docs/PROJECT_VISION.md)                 | Why FRIDAY exists, who it serves, what we believe and are betting on                            |
 | 2   | [PRODUCT_REQUIREMENTS.md](docs/PRODUCT_REQUIREMENTS.md)     | What it does — functional + non-functional requirements, MVP scope, workflows, metrics          |
 | 3   | [SYSTEM_ARCHITECTURE.md](docs/SYSTEM_ARCHITECTURE.md)       | How it's built — stack, frontend, backend, AI, folder structure, deployment                     |
