@@ -15,6 +15,7 @@ The architecture has been designed, documented, reviewed, corrected, and frozen.
 - [DESIGN_REVIEW.md](docs/DESIGN_REVIEW.md) — the pre-implementation technical design review (8 critical issues found)
 - [ARCHITECTURE_CHANGELOG.md](docs/ARCHITECTURE_CHANGELOG.md) — how each was fixed, and **the change-request process that now governs this blueprint**
 - [LAUNCH_READINESS_REPORT.md](docs/LAUNCH_READINESS_REPORT.md) — 95 browser tests, 9 defects found and fixed, and an objective launch verdict
+- [PHASE_3_SCORECARD.md](docs/PHASE_3_SCORECARD.md) — the adaptive loop proven against real persisted data, and the gaps that remain
 - [DEPLOYMENT.md](docs/DEPLOYMENT.md) — the operational runbook
 
 > The blueprint is no longer edited in place. Changes to any table, endpoint, invariant, or the priority formula require a change request. See the changelog for what does and does not need one.

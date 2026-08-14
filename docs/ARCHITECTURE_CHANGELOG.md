@@ -501,6 +501,129 @@ CR-009 correctly preserves an `in_progress` task across a re-plan. The scheduler
 
 ---
 
+## CR-011 — Feasibility believed one session finished a concept
+
+**Found by:** the closed-loop proof, on its first run against real persisted data.
+
+`toFeasibilityConcepts` keyed remaining work off `reps > 0`, so a single session of any quality flipped a concept's remaining learn time from its full estimate straight to zero. Measured: a learner studied Newton's Laws for 45 minutes, came out with mastery `0.098` — started it, understood almost none of it — and required minutes fell 470 → 430.
+
+The scheduler, which reads mastery properly, disagreed in the same breath and kept the full 50-minute `learn` task on the plan. The two halves of the engine described different worlds, and the half shown to the learner — verdict, slack, projected completion date — was the optimistic one.
+
+**Change.** Both terms scale by mastery, so the total is monotonically decreasing:
+
+| mastery | learn | review | total |
+| ------- | ----- | ------ | ----- |
+| 0.0     | 50    | 0      | 50    |
+| 0.1     | 45    | 1      | 46    |
+| 1.0     | 0     | 10     | 10    |
+
+**Invariants affected:** none. **Breaking:** no.
+
+---
+
+## CR-012 — A single missed day could strand a task forever
+
+**Found by:** the 60-minutes-a-day missed-day scenario.
+
+Missing exactly one day produces a candidate that is the same plan shifted a day: drift `0.025` against a `0.15` threshold. The new-day trigger fired, computed a correct and tiny drift, and declined to commit. Nothing committed, so nothing was retired, and the learner opened the app to a `pending` task dated yesterday — the overdue backlog §10.4 promises cannot exist.
+
+The gate asks "is the candidate different enough to be worth disturbing the learner?" That is the right question about a candidate and the wrong one when the _current_ plan is the problem.
+
+**Change.** `missedTaskCount > 0` makes a re-plan material regardless of drift, and exempts it from the churn budget. The exemption is self-extinguishing: the commit it permits retires the missed work, after which it stops applying. Without the budget exemption the failure would only move — the learner would still see yesterday's task, now because they had also finished a session the previous afternoon.
+
+**Invariants affected:** none. **Breaking:** no.
+
+---
+
+## CR-013 — An in-flight prerequisite emptied the entire plan
+
+**Found by:** the availability-change scenario.
+
+CR-010c excluded in-flight concepts from the eligible queue. That stopped the duplicate task and also erased them from the graph's notion of what was covered, so every dependent failed its prerequisite check. The seeded curriculum hangs almost entirely off one root, so a learner who started their first task and then edited their availability got back a plan with **no tasks in it at all**.
+
+**Change.** In-flight concepts are seeded into `scheduledConceptIds` instead. Every candidate filter already skips that set, so there is still no second task; `isPlaceable`/`prerequisiteInputs` treat membership as handled, so dependents follow work the learner is actively doing. They also stop being reported as unscheduled, because they are not dropped — they are in progress.
+
+The core spec asserting that dependents stay blocked encoded the bug and now asserts the opposite.
+
+**Invariants affected:** none. **Breaking:** no.
+
+---
+
+## CR-014 — The churn budget silently discarded availability increases
+
+**Found by:** the availability-change scenario.
+
+Cutting availability from two hours a day to thirty minutes committed. Raising it back to three hours minutes later returned `churn_budget_exceeded`. The plan went on describing a thirty-minute week the learner had already corrected, and the freed-up time was thrown away.
+
+**Change.** `constraint` is exempt from the churn budget, on different grounds from CR-012's exemption. Availability is not a preference about the plan, it is a fact about the learner's life, and a plan that contradicts it is not stale but incorrect. The materiality gate still stops a settings form that posts on every blur: re-saving identical rules scores drift `0` and does not commit.
+
+**Invariants affected:** none. **Breaking:** no.
+
+---
+
+## CR-015 — Goals were write-once, and drift could not see a horizon change
+
+**Found by:** the goal-change audit.
+
+Goals had `POST` and `GET`, no `PATCH`, and no `update` on the repository. The exam date sets the horizon every projection, verdict and priority is computed against, and it was the one input the learner could not correct.
+
+**Change.** `PATCH /v1/goals/:goalId` accepts `targetDate`, `targetWeeklyMinutes`, `title`, `description` — pure planner inputs that cannot orphan evidence, because mastery, memory and sessions are keyed to concepts and the concepts do not move. The **curriculum stays immutable**: swapping it would orphan every row earned against concepts that no longer belong to the goal, and a learner changing _what_ they study is starting something new, which `POST /v1/goals` already expresses without destroying the old goal's history.
+
+The integration proof then found the edit changed nothing. Pulling the exam in from 120 days to 21 scored drift `0.0425` and was discarded — correctly, as far as it could see: the fourteen-day task list does not change when the far horizon shrinks but the work still fits. But a plan row also stores the verdict, the slack and the projected completion date, so the committed plan reported 7,200 available minutes against the 1,260 the learner actually had.
+
+`computeDrift` was measuring the demand side of a feasibility calculation and not the supply side. Capacity is now a fifth equally-weighted signal.
+
+|            | version | target     | required | available |
+| ---------- | ------- | ---------- | -------- | --------- |
+| before     | v1      | 2026-12-12 | 470m     | 7200m     |
+| pulled in  | v2      | 2026-09-04 | 466m     | 1260m     |
+| pushed out | v3      | 2027-02-10 | 466m     | 10800m    |
+| renamed    | v3      | unchanged  | —        | —         |
+
+**Invariants affected:** none. **Breaking:** no — `DriftInput` gains two required fields, internal to the planner.
+
+---
+
+## CR-016 — Two concurrency races at the write boundary
+
+**Found by:** the adversarial data-integrity pass (25 attacks).
+
+**Concurrent session completion.** `findSession` is an ordinary `SELECT`, so two concurrent completions both read `status = 'active'`, both passed the guard, and both wrote: two evidence events and two mastery updates from a single sitting. A double-tapped Finish button was enough to inflate the learner's own mastery. `findSessionForUpdate` takes a row lock, so the loser blocks until the winner commits, re-reads `completed`, and is rejected by the guard that was already there. `abandonSession` had the same shape and is now a single locked transaction.
+
+**Concurrent availability saves.** `replaceAll` is a delete and an insert with nothing serialising them, so two saves could interleave and leave a _blended_ rule set — some days at the old capacity and some at the new. It now locks the owning `users` row, and the caller supplies the transaction.
+
+The plan briefly lagging the winning availability is left as **safe degradation** and documented as such: each save writes then re-plans, so with two in flight the last plan to commit may have read the earlier capacity. The rules are the source of truth, nothing is lost, and the next re-plan reconciles.
+
+**Invariants affected:** none. **Breaking:** no.
+
+---
+
+## CR-017 — The panel claimed a session size the planner did not deliver
+
+**Found by:** the adaptive claim audit.
+
+The Live Intelligence Panel renders "Held your sessions at about 15 minutes" from `profile.targetSessionMinutes`, and directly beneath it renders the recommended task's duration. Measured: the dial read 15 and the recommendation was 50 minutes — and passing 120 instead of 15 produced the identical recommendation.
+
+The wire was never missing. The gap is what happens when _nothing_ fits: `core/priority` deliberately returns the top candidate whole rather than substituting a lesser one (§7.2 step 3). That is the right call for the ranking — every concept in the seeded curriculum is 40–60 minutes, and offering a worse topic because it is shorter would be worse advice — and the wrong thing to narrate as "I sized your session".
+
+**Change.** The claim is dropped rather than reworded, per the standing rule that an unenforced claim is removed rather than dressed up. FRIDAY did adapt the budget and the ranking really was fitted against it; it simply has nothing short enough to offer today. Restoring the claim requires the planner to **size tasks to the session**, which is Phase 4 work.
+
+**Invariants affected:** none. **Breaking:** no.
+
+---
+
+## CR-018 — `format:check` was reporting environmental noise as a formatting backlog
+
+`pnpm format:check` reported 43 files. Classifying each against its own Prettier output showed 42 were byte-identical apart from carriage returns, and exactly one — README.md — had a genuine difference. The cause is `core.autocrlf=true` with no `.gitattributes`.
+
+Reformatting the 42 would have produced an enormous diff and fixed nothing durably, since the next Windows checkout reintroduces every CRLF. A check that reports noise and real problems in one undifferentiated list is a check nobody reads — and the one file that needed attention had been sitting inside it.
+
+**Change.** `.gitattributes` declares `* text=auto eol=lf`, with binaries excluded. `git add --renormalize .` confirmed the whole-repository staged diff was README.md's two lines and nothing else.
+
+**Invariants affected:** none. **Breaking:** no.
+
+---
+
 ---
 
 ## Baseline History
