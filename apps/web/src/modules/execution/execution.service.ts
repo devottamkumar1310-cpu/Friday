@@ -90,7 +90,17 @@ export async function completeSession(
     const execution = executionRepository(tx);
     const memory = memoryRepository(tx);
 
-    const session = await execution.findSession(user.id, sessionId);
+    /**
+     * Locked, not merely read.
+     *
+     * The status guard below is correct and was not enough: two concurrent
+     * completions both read `active`, both passed it, and both committed, so one
+     * sitting produced two evidence events and two mastery updates. A
+     * double-tapped Finish button was sufficient. `findSessionForUpdate` makes
+     * the loser wait for the winner to commit, after which it reads
+     * `completed` and this same guard rejects it.
+     */
+    const session = await execution.findSessionForUpdate(user.id, sessionId);
     if (!session) throw ApiError.notFound();
     if (session.status !== 'active') throw new ApiError(ERROR_CODES.SESSION_NOT_ACTIVE);
 
@@ -277,26 +287,36 @@ export async function completeSession(
 }
 
 export async function abandonSession(user: UserRow, sessionId: string): Promise<void> {
-  const session = await executionRepository(getDb()).findSession(user.id, sessionId);
-  if (!session) throw ApiError.notFound();
+  const db = getDb();
 
-  /**
-   * Terminal is terminal.
-   *
-   * `completeSession` has always rejected a non-active session; this path did
-   * not, and an audit confirmed the consequence: `complete` then `abandon`
-   * returned 200 and rewrote a finished session's status to `abandoned`. The
-   * minutes and the evidence stayed, but every reader of `status` — completion
-   * rate, band, trend, streak — then saw a session the learner had actually
-   * finished as one they walked out on. A retry, a double-tap, or a tab left
-   * open was enough to corrupt the learner's own history, silently, in the one
-   * table the adaptive engine is built on.
-   *
-   * Same code as the completion path, so both replays fail the same way.
-   */
-  if (session.status !== 'active') throw new ApiError(ERROR_CODES.SESSION_NOT_ACTIVE);
+  // Read-guard-write in one transaction with the row locked, for the same
+  // reason as `completeSession`: the check and the write must not be separable
+  // by another request.
+  const session = await db.transaction(async (tx) => {
+    const execution = executionRepository(tx);
+    const row = await execution.findSessionForUpdate(user.id, sessionId);
+    if (!row) throw ApiError.notFound();
 
-  await executionRepository(getDb()).abandonSession(user.id, sessionId);
+    /**
+     * Terminal is terminal.
+     *
+     * `completeSession` has always rejected a non-active session; this path did
+     * not, and an audit confirmed the consequence: `complete` then `abandon`
+     * returned 200 and rewrote a finished session's status to `abandoned`. The
+     * minutes and the evidence stayed, but every reader of `status` — completion
+     * rate, band, trend, streak — then saw a session the learner had actually
+     * finished as one they walked out on. A retry, a double-tap, or a tab left
+     * open was enough to corrupt the learner's own history, silently, in the one
+     * table the adaptive engine is built on.
+     *
+     * Same code as the completion path, so both replays fail the same way.
+     */
+    if (row.status !== 'active') throw new ApiError(ERROR_CODES.SESSION_NOT_ACTIVE);
+
+    await execution.abandonSession(user.id, sessionId);
+    return row;
+  });
+
   trackEvent(user.id, EVENTS.sessionAbandoned);
 
   // A discarded session produced no evidence, but it did consume a slot the

@@ -81,16 +81,20 @@ export async function setAvailability(user: UserRow, input: SetAvailabilityReque
     byDay.set(rule.dayOfWeek, existing);
   }
 
-  await availabilityRepository(db).replaceAll(
-    user.id,
-    input.rules.map((r) => ({
-      dayOfWeek: r.dayOfWeek,
-      startTime: r.startTime,
-      endTime: r.endTime,
-      kind: r.kind,
-      effectiveFrom: r.effectiveFrom ?? null,
-      effectiveUntil: r.effectiveUntil ?? null,
-    })),
+  // One transaction, so the delete and the insert inside `replaceAll` cannot be
+  // interleaved by a second concurrent save.
+  await db.transaction(async (tx) =>
+    availabilityRepository(tx).replaceAll(
+      user.id,
+      input.rules.map((r) => ({
+        dayOfWeek: r.dayOfWeek,
+        startTime: r.startTime,
+        endTime: r.endTime,
+        kind: r.kind,
+        effectiveFrom: r.effectiveFrom ?? null,
+        effectiveUntil: r.effectiveUntil ?? null,
+      })),
+    ),
   );
 
   logger.info('availability updated', { ruleCount: input.rules.length });
