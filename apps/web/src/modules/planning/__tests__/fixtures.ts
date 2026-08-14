@@ -307,6 +307,126 @@ export async function goalRow(learner: Learner): Promise<GoalRow> {
   return row;
 }
 
+// ---------------------------------------------------------------------------
+// Learning-state snapshots
+// ---------------------------------------------------------------------------
+
+export interface ConceptLearningState {
+  conceptId: string;
+  title: string;
+  mastery: number;
+  confidence: number;
+  evidenceCount: number;
+  totalMinutes: number;
+  /** FSRS. Null when the concept has never been reviewed. */
+  stability: number | null;
+  difficulty: number | null;
+  reps: number | null;
+  state: string | null;
+  dueAt: string | null;
+}
+
+/**
+ * Everything the planner reads about what the learner knows.
+ *
+ * The closed-loop proof turns on being able to say "this specific number moved,
+ * and the plan moved because of it". That needs mastery and FSRS captured
+ * together, keyed by concept, at a point in time — reading them separately
+ * afterwards cannot distinguish a state change from a re-read.
+ */
+export async function snapshotLearningState(
+  learner: Learner,
+): Promise<Map<string, ConceptLearningState>> {
+  const rows = await getDb().execute<{
+    concept_id: string;
+    title: string;
+    mastery: string | null;
+    confidence: string | null;
+    evidence_count: number | null;
+    total_minutes: number | null;
+    stability: string | null;
+    difficulty: string | null;
+    reps: number | null;
+    state: string | null;
+    due_at: string | null;
+  }>(sql`
+    select c.id                 as concept_id,
+           c.title,
+           ms.mastery,
+           ms.confidence,
+           ms.evidence_count,
+           ms.total_minutes,
+           mem.stability,
+           mem.difficulty,
+           mem.reps,
+           mem.state::text      as state,
+           mem.due_at::text     as due_at
+      from concepts c
+      join curricula cur on cur.id = c.curriculum_id
+      left join mastery_states ms on ms.concept_id = c.id and ms.user_id = c.user_id
+      left join memory_states mem on mem.concept_id = c.id and mem.user_id = c.user_id
+     where cur.goal_id = ${learner.goal.id}
+  `);
+
+  return new Map(
+    rows.rows.map((r) => [
+      r.concept_id,
+      {
+        conceptId: r.concept_id,
+        title: r.title,
+        mastery: r.mastery === null ? 0 : Number(r.mastery),
+        confidence: r.confidence === null ? 0 : Number(r.confidence),
+        evidenceCount: r.evidence_count ?? 0,
+        totalMinutes: r.total_minutes ?? 0,
+        stability: r.stability === null ? null : Number(r.stability),
+        difficulty: r.difficulty === null ? null : Number(r.difficulty),
+        reps: r.reps,
+        state: r.state,
+        dueAt: r.due_at,
+      },
+    ]),
+  );
+}
+
+/**
+ * Rewrites availability wholesale, the way the settings form does.
+ *
+ * Returns nothing: callers that need the planner to react must invoke the
+ * availability-change trigger themselves, because proving *that the trigger
+ * fires* is half of what the availability scenarios are for.
+ */
+export async function setDailyAvailability(
+  learner: Learner,
+  dailyMinutes: number,
+  options: { days?: number[] } = {},
+): Promise<void> {
+  const db = getDb();
+  await db.delete(availabilityRules).where(eq(availabilityRules.userId, learner.user.id));
+  if (dailyMinutes <= 0) return;
+
+  const days = options.days ?? [0, 1, 2, 3, 4, 5, 6];
+  const endHour = 9 + Math.floor(dailyMinutes / 60);
+  const endMinute = dailyMinutes % 60;
+  await db.insert(availabilityRules).values(
+    days.map((dayOfWeek) => ({
+      userId: learner.user.id,
+      dayOfWeek,
+      startTime: '09:00:00',
+      endTime: `${String(endHour).padStart(2, '0')}:${String(endMinute).padStart(2, '0')}:00`,
+      kind: 'available',
+    })),
+  );
+}
+
+/** Per-day scheduled minutes across live tasks — the learner's actual load. */
+export function minutesByDay(tasks: LedgerTask[]): Map<string, number> {
+  const perDay = new Map<string, number>();
+  for (const t of tasks) {
+    perDay.set(t.scheduledDate, (perDay.get(t.scheduledDate) ?? 0) + t.estimatedMinutes);
+  }
+  return perDay;
+}
+
 export async function tasksByIds(ids: string[]): Promise<TaskRow[]> {
   if (ids.length === 0) return [];
   return getDb().select().from(tasks).where(inArray(tasks.id, ids));

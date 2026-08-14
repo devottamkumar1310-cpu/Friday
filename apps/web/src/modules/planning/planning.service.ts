@@ -123,18 +123,42 @@ async function loadPlanMaterials(userId: string, goal: GoalRow): Promise<PlanMat
   };
 }
 
-/** Feasibility's per-concept input (§9). M0: no separate practice/review estimation yet. */
+/**
+ * Feasibility's per-concept input (§9).
+ *
+ * Remaining work is scaled by **mastery**, not by whether a review row exists.
+ *
+ * It used to key off `reps > 0`: one session, of any quality, flipped a
+ * concept's remaining learn time from its full estimate straight to zero. The
+ * closed-loop proof caught what that costs. A learner studied Newton's Laws for
+ * 45 minutes, came out with mastery `0.098` — they had started it and
+ * understood almost none of it — and feasibility wrote off 80% of the concept:
+ * required minutes fell 470 → 430 on the strength of a single rep.
+ *
+ * The scheduler, which reads mastery properly, disagreed in the same breath and
+ * kept a full 50-minute `learn` task on the plan. So the two halves of the
+ * engine were describing different worlds, and the half the learner is shown —
+ * the verdict, the slack, the projected completion date — was the optimistic
+ * one. That is the failure mode this product cannot have: telling someone they
+ * are on track using a number that assumes they know things they do not.
+ *
+ * Scaling both terms by mastery keeps the total monotonically decreasing, which
+ * is what makes the figure trustworthy to watch:
+ *
+ *   mastery 0.0  → 50 learn +  0 review = 50   (untouched)
+ *   mastery 0.1  → 45 learn +  1 review = 46   (barely started, barely moved)
+ *   mastery 1.0  →  0 learn + 10 review = 10   (learned; only retention remains)
+ */
 function toFeasibilityConcepts(
   concepts: ConceptRow[],
   edges: ConceptEdgeRow[],
-  memoryRepoRows: { conceptId: string; reps: number }[],
+  masteryStates: Map<string, CoreMasteryState>,
 ) {
   const outDegree = new Map<string, number>();
   for (const e of edges) {
     if (e.type !== 'prerequisite_of') continue;
     outDegree.set(e.fromConceptId, (outDegree.get(e.fromConceptId) ?? 0) + 1);
   }
-  const studiedIds = new Set(memoryRepoRows.filter((m) => m.reps > 0).map((m) => m.conceptId));
 
   return concepts
     .filter(
@@ -143,12 +167,15 @@ function toFeasibilityConcepts(
     .map((c) => {
       const leverage =
         1 + DEFAULT_PRIORITY_CONFIG.lambda * Math.min(1, (outDegree.get(c.id) ?? 0) / 10);
-      const isReview = studiedIds.has(c.id);
+      const mastery = Math.min(1, Math.max(0, masteryStates.get(c.id)?.mastery ?? 0));
+
       return {
         conceptId: c.id,
-        remainingLearnMinutes: isReview ? 0 : c.estimatedMinutes,
+        remainingLearnMinutes: Math.round(c.estimatedMinutes * (1 - mastery)),
         remainingPracticeMinutes: 0,
-        projectedReviewMinutes: isReview ? Math.round(c.estimatedMinutes * 0.2) : 0,
+        // Retention cost is only incurred for material actually retained, so it
+        // grows with mastery exactly as the learning cost shrinks.
+        projectedReviewMinutes: Math.round(c.estimatedMinutes * 0.2 * mastery),
         impactTimesLeverage: Number(c.examWeight) * leverage,
       };
     });
@@ -264,7 +291,7 @@ async function persistPlan(
   const feasibilityConcepts = toFeasibilityConcepts(
     materials.concepts,
     materials.edges,
-    memoryStates.map((m) => ({ conceptId: m.conceptId, reps: m.reps })),
+    masteryStates,
   );
   const feasibility = assessFeasibility(
     feasibilityConcepts,
@@ -497,7 +524,7 @@ export async function regeneratePlan(
   const feasibilityConcepts = toFeasibilityConcepts(
     materials.concepts,
     materials.edges,
-    candidateMemory.map((m) => ({ conceptId: m.conceptId, reps: m.reps })),
+    candidateMastery,
   );
   const newFeasibility = assessFeasibility(
     feasibilityConcepts,
@@ -598,11 +625,10 @@ export async function getFeasibility(user: UserRow, goalId: string) {
   if (!goal) throw ApiError.notFound();
 
   const materials = await loadPlanMaterials(user.id, goal);
-  const memoryStates = await memoryRepository(db).listAllMemoryStates(user.id);
   const feasibilityConcepts = toFeasibilityConcepts(
     materials.concepts,
     materials.edges,
-    memoryStates.map((m) => ({ conceptId: m.conceptId, reps: m.reps })),
+    await loadMasteryStates(user.id, materials),
   );
   const feasibility = assessFeasibility(
     feasibilityConcepts,
