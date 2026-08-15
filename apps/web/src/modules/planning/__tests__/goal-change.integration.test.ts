@@ -4,6 +4,7 @@ import {
   createLearner,
   destroyLearner,
   goalRow,
+  duplicateConceptsOnSameDay,
   liveTasks,
   snapshotLearningState,
   snapshotLedger,
@@ -128,8 +129,7 @@ describe('a learner can move their exam date, and the planner follows', () => {
 
   it('the resulting plan is coherent — no duplicates, nothing stranded', () => {
     const live = liveTasks(afterPushOut);
-    const withConcept = live.filter((t) => t.conceptId);
-    expect(new Set(withConcept.map((t) => t.conceptId)).size).toBe(withConcept.length);
+    expect(duplicateConceptsOnSameDay(live)).toStrictEqual([]);
     expect(
       live.filter((t) => t.status === 'pending' && t.planId !== afterPushOut.planId),
     ).toStrictEqual([]);

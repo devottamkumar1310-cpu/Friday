@@ -5,6 +5,7 @@ import {
   createLearner,
   destroyLearner,
   liveMinutes,
+  duplicateConceptsOnSameDay,
   liveTasks,
   listPlanVersions,
   setTaskStatus,
@@ -35,11 +36,12 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** Minutes owed per concept — the quantity that must not grow. */
 function byConcept(tasks: ReturnType<typeof liveTasks>): Map<string, number> {
   const m = new Map<string, number>();
   for (const t of tasks) {
     if (!t.conceptId) continue;
-    m.set(t.conceptId, (m.get(t.conceptId) ?? 0) + 1);
+    m.set(t.conceptId, (m.get(t.conceptId) ?? 0) + t.estimatedMinutes);
   }
   return m;
 }
@@ -278,8 +280,7 @@ describe('missed-work redistribution (database-backed)', () => {
     expect(after.requiredMinutes).toBeGreaterThan(0);
 
     // And no concept is counted twice in what the learner is being asked to do.
-    const live = liveTasks(after).filter((t) => t.conceptId);
-    expect(new Set(live.map((t) => t.conceptId)).size).toBe(live.length);
+    expect(duplicateConceptsOnSameDay(liveTasks(after))).toStrictEqual([]);
   });
 
   it('creates no impossible backlog', () => {
@@ -300,18 +301,22 @@ describe('missed-work redistribution (database-backed)', () => {
     const repeated = await snapshotLedger(learner);
     const counts = byConcept(liveTasks(repeated));
 
-    const duplicated = [...counts.entries()]
-      .filter(([, n]) => n > 1)
-      .map(([conceptId, n]) => {
-        const rows = liveTasks(repeated).filter((t) => t.conceptId === conceptId);
-        return `${rows[0]?.conceptTitle} x${n}: ${rows
-          .map((r) => `v${r.planVersion}/${r.status}/${r.scheduledDate}`)
-          .join(' + ')}`;
-      });
-    expect(duplicated).toStrictEqual([]);
+    /**
+     * Compounding, restated for a planner that splits.
+     *
+     * Counting tasks per concept was a sound duplication check while one
+     * concept meant one task. Adaptive sizing breaks that premise deliberately:
+     * a 50-minute concept under a 15-minute budget becomes four blocks, and the
+     * total is conserved rather than multiplied.
+     *
+     * The failure this test exists for — the same work offered twice over — is
+     * still exactly expressible: never twice on one day, and never a larger
+     * per-concept total than the learner started with.
+     */
+    expect(duplicateConceptsOnSameDay(liveTasks(repeated))).toStrictEqual([]);
 
-    for (const [conceptId, n] of counts) {
-      expect(n).toBeLessThanOrEqual(Math.max(1, baseline.get(conceptId) ?? 1));
+    for (const [conceptId, minutes] of counts) {
+      expect(minutes).toBeLessThanOrEqual(Math.max(1, baseline.get(conceptId) ?? 1));
     }
 
     const versions = await listPlanVersions(learner);

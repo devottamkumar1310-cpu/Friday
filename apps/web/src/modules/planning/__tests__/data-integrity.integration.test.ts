@@ -10,6 +10,7 @@ import { getDb, plans, studySessions, tasks } from '@friday/db';
 import {
   createLearner,
   destroyLearner,
+  duplicateConceptsOnSameDay,
   liveTasks,
   setTaskStatus,
   snapshotLearningState,
@@ -333,10 +334,7 @@ describe('data integrity — concurrent planning', () => {
 
   async function assertNoDuplicateLiveConcepts(label: string) {
     const ledger = await snapshotLedger(learner);
-    const live = liveTasks(ledger).filter((t) => t.conceptId);
-    expect(new Set(live.map((t) => t.conceptId)).size, `${label}: no duplicated concept`).toBe(
-      live.length,
-    );
+    expect(duplicateConceptsOnSameDay(liveTasks(ledger)), label).toStrictEqual([]);
   }
 
   it('concurrent regeneration leaves exactly one active plan', async () => {
@@ -454,8 +452,8 @@ describe('data integrity — concurrent planning', () => {
       await regeneratePlan(learner.user, learner.goal.id, 'user_request', 'explicit');
       const ledger = await snapshotLedger(learner);
       const live = liveTasks(ledger).filter((t) => t.conceptId);
-      expect(new Set(live.map((t) => t.conceptId)).size).toBe(live.length);
-      counts.push(live.length);
+      expect(duplicateConceptsOnSameDay(live)).toStrictEqual([]);
+      counts.push(new Set(live.map((t) => t.conceptId)).size);
     }
     // Stable, not growing.
     expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1);

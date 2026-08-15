@@ -3,6 +3,7 @@ import {
   createLearner,
   destroyLearner,
   liveMinutes,
+  duplicateConceptsOnSameDay,
   liveTasks,
   minutesByDay,
   setTaskStatus,
@@ -142,8 +143,7 @@ describe('availability adaptation (database-backed, both directions)', () => {
   });
 
   it('no concept is scheduled twice', () => {
-    const withConcept = pending(reduced).filter((t) => t.conceptId);
-    expect(new Set(withConcept.map((t) => t.conceptId)).size).toBe(withConcept.length);
+    expect(duplicateConceptsOnSameDay(pending(reduced))).toStrictEqual([]);
   });
 
   it('the verdict tells the truth about a now-harder goal', () => {
@@ -185,8 +185,7 @@ describe('availability adaptation (database-backed, both directions)', () => {
   });
 
   it('expanding does not duplicate or strand anything', () => {
-    const withConcept = pending(expanded).filter((t) => t.conceptId);
-    expect(new Set(withConcept.map((t) => t.conceptId)).size).toBe(withConcept.length);
+    expect(duplicateConceptsOnSameDay(pending(expanded))).toStrictEqual([]);
     expect(pending(expanded).filter((t) => t.planId !== expanded.planId)).toStrictEqual([]);
   });
 

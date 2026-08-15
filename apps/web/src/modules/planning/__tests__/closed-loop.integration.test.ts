@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   createLearner,
   destroyLearner,
+  duplicateConceptsOnSameDay,
   liveTasks,
   minutesByDay,
   snapshotLearningState,
@@ -318,8 +319,7 @@ describe('the closed learning loop (database-backed, end to end)', () => {
   it('DAY 3 — the resulting plan is coherent: no duplicates, no overload', () => {
     const live = liveTasks(day3.ledger);
 
-    const withConcept = live.filter((t) => t.conceptId);
-    expect(new Set(withConcept.map((t) => t.conceptId)).size).toBe(withConcept.length);
+    expect(duplicateConceptsOnSameDay(live)).toStrictEqual([]);
 
     for (const [date, minutes] of minutesByDay(live.filter((t) => t.status === 'pending'))) {
       expect(minutes, `${date} must fit the learner's 120m capacity`).toBeLessThanOrEqual(120);

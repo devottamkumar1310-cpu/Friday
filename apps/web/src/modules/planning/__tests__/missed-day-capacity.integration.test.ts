@@ -4,6 +4,7 @@ import {
   createLearner,
   destroyLearner,
   liveMinutes,
+  duplicateConceptsOnSameDay,
   liveTasks,
   minutesByDay,
   setTaskStatus,
@@ -112,8 +113,7 @@ describe('a missed day never becomes tomorrow’s double shift', () => {
   });
 
   it('does NOT duplicate the missed work', () => {
-    const withConcept = pending(afterMiss).filter((t) => t.conceptId);
-    expect(new Set(withConcept.map((t) => t.conceptId)).size).toBe(withConcept.length);
+    expect(duplicateConceptsOnSameDay(pending(afterMiss))).toStrictEqual([]);
   });
 
   it('retires the superseded pending tasks rather than leaving them live', () => {
@@ -166,14 +166,9 @@ describe('a missed day never becomes tomorrow’s double shift', () => {
 
   it('does not multiply tasks across three consecutive re-plans', () => {
     for (const [i, ledger] of replans.entries()) {
-      const withConcept = pending(ledger).filter((t) => t.conceptId);
-      const counts = new Map<string, number>();
-      for (const t of withConcept) counts.set(t.conceptId!, (counts.get(t.conceptId!) ?? 0) + 1);
-
-      const duplicated = [...counts.entries()]
-        .filter(([, n]) => n > 1)
-        .map(([id, n]) => `${withConcept.find((t) => t.conceptId === id)?.conceptTitle} x${n}`);
-      expect(duplicated, `replan #${i + 1}`).toStrictEqual([]);
+      // A concept may hold several blocks now that sizing splits work across
+      // days — what it may never do is hold two on one day, or grow in total.
+      expect(duplicateConceptsOnSameDay(pending(ledger)), `replan #${i + 1}`).toStrictEqual([]);
 
       for (const [date, minutes] of minutesByDay(pending(ledger))) {
         expect(minutes, `replan #${i + 1} ${date}`).toBeLessThanOrEqual(DAILY_CAPACITY);

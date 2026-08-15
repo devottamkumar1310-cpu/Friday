@@ -217,3 +217,142 @@ describe('core/scheduling — invariants (IMPLEMENTATION_ROADMAP §7.3 test 1)',
     }
   });
 });
+
+/**
+ * Adaptive task sizing — the Phase 4 capability.
+ *
+ * A learner who studies in fifteen-minute blocks should get a plan made of
+ * fifteen-minute blocks, not a fifty-minute task with a fifteen-minute caption
+ * above it. These are the controlled proofs; the database-backed ones live in
+ * `apps/web`, where the number the panel quotes and the number on the persisted
+ * row have to be the same number.
+ */
+describe('core/scheduling — adaptive task sizing', () => {
+  it('A · no budget means no change — tasks keep their natural size', () => {
+    const plan = generatePlan(baseInput({ concepts: [node('a', { estimatedMinutes: 45 })] }));
+    const task = plan.days.flatMap((d) => d.tasks)[0];
+    expect(task?.estimatedMinutes).toBe(45);
+  });
+
+  it('B · a tight budget caps every block, not just the first', () => {
+    const plan = generatePlan(
+      baseInput({
+        concepts: [
+          node('a', { estimatedMinutes: 45 }),
+          node('b', { estimatedMinutes: 50 }),
+          node('c', { estimatedMinutes: 40 }),
+        ],
+        sessionBudgetMinutes: 20,
+      }),
+    );
+    const tasks = plan.days.flatMap((d) => d.tasks);
+    expect(tasks.length).toBeGreaterThan(0);
+    for (const t of tasks) expect(t.estimatedMinutes).toBeLessThanOrEqual(20);
+  });
+
+  it('D · a generous budget does not inflate anything beyond its estimate', () => {
+    const plan = generatePlan(
+      baseInput({ concepts: [node('a', { estimatedMinutes: 30 })], sessionBudgetMinutes: 240 }),
+    );
+    const task = plan.days.flatMap((d) => d.tasks)[0];
+    expect(task?.estimatedMinutes).toBe(30);
+  });
+
+  it('E · a 50-minute concept under a 15-minute budget yields a real 15-minute block', () => {
+    const plan = generatePlan(
+      baseInput({ concepts: [node('a', { estimatedMinutes: 50 })], sessionBudgetMinutes: 15 }),
+    );
+    const tasks = plan.days.flatMap((d) => d.tasks).filter((t) => t.conceptId === 'a');
+
+    expect(tasks[0]?.estimatedMinutes).toBe(15);
+    // And the other 35 minutes are not silently forgiven — the concept keeps
+    // being scheduled until it is paid off.
+    expect(tasks.reduce((sum, t) => sum + t.estimatedMinutes, 0)).toBe(50);
+  });
+
+  it('E · the remainder spans days rather than doubling up on one', () => {
+    const plan = generatePlan(
+      baseInput({ concepts: [node('a', { estimatedMinutes: 50 })], sessionBudgetMinutes: 15 }),
+    );
+    for (const day of plan.days) {
+      const forA = day.tasks.filter((t) => t.conceptId === 'a');
+      expect(
+        forA.length,
+        `${day.date} must not hold two blocks of the same concept`,
+      ).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('F · a concept smaller than the floor is taken whole, never padded', () => {
+    const plan = generatePlan(
+      baseInput({ concepts: [node('tiny', { estimatedMinutes: 9 })], sessionBudgetMinutes: 15 }),
+    );
+    const tasks = plan.days.flatMap((d) => d.tasks).filter((t) => t.conceptId === 'tiny');
+
+    expect(tasks[0]?.estimatedMinutes).toBe(9);
+    expect(tasks).toHaveLength(1);
+  });
+
+  it('G · a budget below the floor fabricates nothing', () => {
+    // Better to say "nothing fits" than to hand the learner a four-minute scrap
+    // of a fifty-minute topic and call it a study session.
+    const plan = generatePlan(
+      baseInput({ concepts: [node('a', { estimatedMinutes: 50 })], sessionBudgetMinutes: 5 }),
+    );
+    expect(plan.days.flatMap((d) => d.tasks)).toStrictEqual([]);
+
+    // Refusing to place it is not the same as losing it: the work still has to
+    // show up somewhere the learner can see it, which here is the projection
+    // beyond the window.
+    const projected = plan.projection.flatMap((p) => p.conceptIds);
+    expect([...projected, ...plan.unscheduledConceptIds]).toContain('a');
+  });
+
+  it('G · nothing is invented to fill a budget larger than the whole syllabus', () => {
+    const plan = generatePlan(
+      baseInput({ concepts: [node('a', { estimatedMinutes: 20 })], sessionBudgetMinutes: 120 }),
+    );
+    const total = plan.days.flatMap((d) => d.tasks).reduce((s, t) => s + t.estimatedMinutes, 0);
+    expect(total).toBe(20);
+  });
+
+  it('a partially-scheduled prerequisite does not unblock its dependents (I-4)', () => {
+    // The invariant most at risk from splitting: half a prerequisite is not a
+    // prerequisite. `scheduledConceptIds` only admits fully-allocated concepts.
+    const plan = generatePlan(
+      baseInput({
+        concepts: [
+          node('prereq', { estimatedMinutes: 60 }),
+          node('dependent', { estimatedMinutes: 20 }),
+        ],
+        edges: [
+          {
+            fromConceptId: 'prereq',
+            toConceptId: 'dependent',
+            type: 'prerequisite_of',
+            strength: 0.9,
+          },
+        ],
+        sessionBudgetMinutes: 15,
+        windowCapacity: [{ date: '2026-01-01', capacityMinutes: 60 }],
+      }),
+    );
+    const placed = plan.days.flatMap((d) => d.tasks).map((t) => t.conceptId);
+
+    expect(placed).toContain('prereq');
+    expect(placed, 'a dependent may not start on a half-finished prerequisite').not.toContain(
+      'dependent',
+    );
+  });
+
+  it('day capacity still wins when it is tighter than the session budget', () => {
+    const plan = generatePlan(
+      baseInput({
+        concepts: [node('a', { estimatedMinutes: 60 })],
+        sessionBudgetMinutes: 45,
+        windowCapacity: [{ date: '2026-01-01', capacityMinutes: 20 }],
+      }),
+    );
+    expect(plan.days[0]?.tasks[0]?.estimatedMinutes).toBe(20);
+  });
+});

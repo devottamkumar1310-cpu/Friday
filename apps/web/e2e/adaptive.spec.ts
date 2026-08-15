@@ -52,10 +52,11 @@ test('studying a topic changes what the engine believes about it', async () => {
   await page.goto('/dashboard');
   await expect(page.getByText('Why this one')).toBeVisible();
 
+  const studiedTopic = await currentNextAction(page);
+
   // The rationale is rendered from the live factor table, so it is the visible
   // proof of what the engine currently thinks.
-  const rationaleBefore = await page.locator('main').innerText();
-  expect(rationaleBefore).toMatch(/at 0% mastery/i);
+  expect(await page.locator('main').innerText()).toMatch(/at 0% mastery/i);
 
   await page.getByRole('link', { name: 'Start this now' }).click();
   await page.getByRole('button', { name: 'Start studying' }).click();
@@ -69,18 +70,25 @@ test('studying a topic changes what the engine believes about it', async () => {
   await page.getByRole('button', { name: 'Save and finish' }).click();
   await expect(page.getByText(/minutes? done\./)).toBeVisible({ timeout: 20_000 });
 
-  await page.goto('/dashboard');
-  await expect(page.getByText('Why this one')).toBeVisible();
-  const rationaleAfter = await page.locator('main').innerText();
+  /**
+   * What "the engine believes something changed" can actually be observed as.
+   *
+   * This used to scan the whole page for "at 0% mastery" and require it to be
+   * gone. That assertion can never pass, and never did — it arrived with the
+   * Phase 4 WIP commit and was not run until the Phase 4 audit. Completing a
+   * session marks its task `completed`, so it stops being a candidate, and the
+   * recommendation necessarily moves to some *other* concept — one the learner
+   * genuinely has not studied, whose rationale correctly reads 0%. The test was
+   * demanding that an unstudied topic report progress.
+   *
+   * The observable property is the one the engine really guarantees: the topic
+   * just studied is no longer what FRIDAY puts in front of the learner, because
+   * the evidence was consumed and its task retired.
+   */
+  const nextTopic = await currentNextAction(page);
+  expect(nextTopic, 'the finished topic must not be recommended again').not.toBe(studiedTopic);
 
-  // The evidence reached the ranking. Note what is deliberately *not* asserted:
-  // that the top task changed. Newton's Laws carries 70% exam weight, so one
-  // session leaves an 88% gap on the heaviest topic in the syllabus and it can
-  // legitimately still rank first. Demanding a different task would be
-  // asserting a preference, not a property.
-  expect(rationaleAfter, 'the engine still believes nothing has been studied').not.toMatch(
-    /at 0% mastery/i,
-  );
+  await expect(page.getByText('Why this one')).toBeVisible();
 });
 
 test('rebuilding the plan respects what has been learned', async () => {

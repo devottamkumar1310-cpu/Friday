@@ -30,6 +30,7 @@ import {
 } from '@friday/db';
 import { logger } from '@friday/observability';
 import { toCoreMasteryState, toCoreMemoryState } from '../shared/mappers';
+import { getAdaptiveProfile } from '../adaptive/adaptive.service';
 import { buildCapacityWindows, hasAnyAvailability } from './availability';
 
 const WINDOW_DAYS = 14;
@@ -84,10 +85,17 @@ interface PlanMaterials {
   fullHorizonCapacity: Awaited<ReturnType<typeof buildCapacityWindows>>;
   /** Concepts with a task the learner has already started — never re-scheduled. */
   inFlightConceptIds: Set<string>;
+  /**
+   * How long this learner actually studies for, when there is enough evidence
+   * to say. `undefined` for a learner the adaptive engine cannot yet read, so
+   * their tasks keep their natural size.
+   */
+  sessionBudgetMinutes: number | undefined;
 }
 
-async function loadPlanMaterials(userId: string, goal: GoalRow): Promise<PlanMaterials> {
+async function loadPlanMaterials(user: UserRow, goal: GoalRow): Promise<PlanMaterials> {
   const db = getDb();
+  const userId = user.id;
   const rules = await availabilityRepository(db).listForUser(userId);
   if (!hasAnyAvailability(rules)) {
     throw new ApiError(ERROR_CODES.NO_AVAILABILITY_DEFINED);
@@ -115,6 +123,24 @@ async function loadPlanMaterials(userId: string, goal: GoalRow): Promise<PlanMat
     inFlightLinks.filter((l) => l.isPrimary).map((l) => l.conceptId),
   );
 
+  /**
+   * The adaptive session length, applied at *plan* time rather than only at
+   * selection time.
+   *
+   * This is what closes CR-017. The dial already reached the selector, which
+   * walks the ranking for a task that fits — but every task had been sized from
+   * its concept's own estimate, so for a learner who studies in fifteen-minute
+   * blocks against forty-minute concepts, nothing ever fitted and the panel
+   * ended up quoting fifteen minutes above a fifty-minute task.
+   *
+   * `unknown` deliberately yields `undefined`, exactly as the dashboard does:
+   * re-sizing a learner's whole plan on evidence the engine admits it does not
+   * have would be the same overreach the rest of this feature refuses.
+   */
+  const profile = await getAdaptiveProfile(user);
+  const sessionBudgetMinutes =
+    profile.band === 'unknown' ? undefined : profile.targetSessionMinutes;
+
   return {
     today,
     targetDate,
@@ -123,6 +149,7 @@ async function loadPlanMaterials(userId: string, goal: GoalRow): Promise<PlanMat
     windowCapacity,
     fullHorizonCapacity,
     inFlightConceptIds,
+    sessionBudgetMinutes,
   };
 }
 
@@ -289,6 +316,7 @@ async function persistPlan(
     learner: { reliability: 1.0, pace: 1.0 }, // E-1: cold start until a minimum sample exists
     config: DEFAULT_PRIORITY_CONFIG,
     inFlightConceptIds: materials.inFlightConceptIds,
+    sessionBudgetMinutes: materials.sessionBudgetMinutes,
   });
 
   const feasibilityConcepts = toFeasibilityConcepts(
@@ -431,7 +459,7 @@ function hashInputs(materials: PlanMaterials): string {
 }
 
 export async function generateInitialPlan(user: UserRow, goal: GoalRow): Promise<PlanRow> {
-  const materials = await loadPlanMaterials(user.id, goal);
+  const materials = await loadPlanMaterials(user, goal);
   return persistPlan(user.id, goal, 1, 'initial', materials);
 }
 
@@ -469,7 +497,7 @@ export async function regeneratePlan(
   if (!goal) throw ApiError.notFound();
 
   const activePlan = await planningRepository(db).findActive(user.id, goalId);
-  const materials = await loadPlanMaterials(user.id, goal);
+  const materials = await loadPlanMaterials(user, goal);
 
   /**
    * §10.4 debt model: name the missed work, but do not write anything yet.
@@ -520,6 +548,7 @@ export async function regeneratePlan(
     learner: { reliability: 1.0, pace: 1.0 },
     config: DEFAULT_PRIORITY_CONFIG,
     inFlightConceptIds: materials.inFlightConceptIds,
+    sessionBudgetMinutes: materials.sessionBudgetMinutes,
   });
 
   // Same reason: the committed plan's feasibility is computed with real reps,
@@ -630,7 +659,7 @@ export async function getFeasibility(user: UserRow, goalId: string) {
   const goal = await goalsRepository(db).findById(user.id, goalId);
   if (!goal) throw ApiError.notFound();
 
-  const materials = await loadPlanMaterials(user.id, goal);
+  const materials = await loadPlanMaterials(user, goal);
   const feasibilityConcepts = toFeasibilityConcepts(
     materials.concepts,
     materials.edges,

@@ -431,3 +431,30 @@ export async function tasksByIds(ids: string[]): Promise<TaskRow[]> {
   if (ids.length === 0) return [];
   return getDb().select().from(tasks).where(inArray(tasks.id, ids));
 }
+
+/**
+ * Genuine duplication, distinguished from adaptive splitting.
+ *
+ * Until Phase 4 a concept meant exactly one task, so `distinct === total` was a
+ * sound duplication check. Adaptive sizing breaks that premise on purpose: a
+ * 50-minute concept under a 15-minute session budget becomes four blocks across
+ * four days, and the total is conserved (15+15+15+5), not multiplied.
+ *
+ * What still must never happen is the failure those checks were written for —
+ * the same work offered twice over. That is now precisely expressible: a
+ * concept may span days, but may never appear twice on one day.
+ */
+export function duplicateConceptsOnSameDay(tasks: LedgerTask[]): string[] {
+  const seen = new Map<string, Set<string>>();
+  const offenders: string[] = [];
+  for (const task of tasks) {
+    if (!task.conceptId) continue;
+    const onDay = seen.get(task.scheduledDate) ?? new Set<string>();
+    if (onDay.has(task.conceptId)) {
+      offenders.push(`${task.conceptTitle} twice on ${task.scheduledDate}`);
+    }
+    onDay.add(task.conceptId);
+    seen.set(task.scheduledDate, onDay);
+  }
+  return offenders;
+}
