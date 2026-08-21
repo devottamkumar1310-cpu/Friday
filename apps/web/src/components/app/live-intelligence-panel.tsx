@@ -55,6 +55,16 @@ export interface LiveIntelligencePanelProps {
   profile: AdaptiveProfile;
   risks: PanelRisk[];
   action: PanelAction | null;
+  /**
+   * What the last re-plan did with missed work, when it did anything.
+   *
+   * Joins the same "What I changed" list rather than getting a card. A learner
+   * who missed yesterday does not experience "session sizing" and "your missed
+   * work" as two categories of announcement — both are the system telling them
+   * what it did — and giving redistribution its own panel would turn the one
+   * screen that reads as a conversation back into a dashboard.
+   */
+  planChange: { statement: string; evidence: string } | null;
   /** Tasks still scheduled today, for the one-line footnote under the action. */
   remainingToday: number;
 }
@@ -90,6 +100,7 @@ export function LiveIntelligencePanel({
   profile,
   risks,
   action,
+  planChange,
   remainingToday,
 }: LiveIntelligencePanelProps) {
   /**
@@ -151,6 +162,15 @@ export function LiveIntelligencePanel({
     ? profile.decisions
     : profile.decisions.filter((d) => !/minutes\./.test(d.change));
 
+  // Redistribution first: it is the thing the learner is most likely to be
+  // anxious about, and answering it before anything else is the point.
+  const changes = [
+    ...(planChange
+      ? [{ id: 'redistribution', change: planChange.statement, because: planChange.evidence }]
+      : []),
+    ...decisions,
+  ];
+
   return (
     // Single column at every width. `max-w-xl` rather than the layout's full
     // `max-w-5xl`: this is one conversation, and a conversation that spans a
@@ -193,7 +213,7 @@ export function LiveIntelligencePanel({
           <Beat
             icon={<Check className="size-4" aria-hidden />}
             label="What I changed"
-            items={decisions.map((d) => ({
+            items={changes.map((d) => ({
               key: d.id,
               primary: d.change,
               secondary: d.because,

@@ -337,6 +337,8 @@ async function persistPlan(
   return db.transaction(async (tx) => {
     const planning = planningRepository(tx);
 
+    let retirement: { rescheduled: number; cancelled: number } | null = null;
+
     const activePlan = await planning.findActive(userId, goal.id);
     if (activePlan) {
       await planning.supersede(userId, activePlan.id);
@@ -350,6 +352,7 @@ async function persistPlan(
       // `rescheduled` so the history records a miss, and work that was merely
       // planned for a later day is `cancelled` because nothing was missed.
       const retired = await planning.retireSupersededTasks(userId, activePlan.id, missedTaskIds);
+      retirement = retired;
       logger.info('retired superseded plan tasks', {
         planId: activePlan.id,
         version: activePlan.version,
@@ -373,7 +376,27 @@ async function persistPlan(
       slackMinutes: Math.round(feasibility.slackMinutes),
       projectedCompletionDate: feasibility.projectedCompletionDate,
       reliabilityFactor: '1.0',
-      diffSummary: null,
+      /**
+       * What this re-plan actually did, recorded rather than recomputed.
+       *
+       * `diff_summary` has existed since Phase 1 and has always been written as
+       * `null`. It is the right home for this: the panel needs to tell the
+       * learner what changed, and the only trustworthy source for that is the
+       * transaction that changed it. Deriving the sentence later — by counting
+       * rows on read — would be a second implementation of the same fact, free
+       * to drift from the first.
+       *
+       * `rescheduled` is work that was due and missed; `cancelled` is work that
+       * was superseded before it came due. Only the first is something the
+       * learner did.
+       */
+      diffSummary: {
+        supersededVersion: activePlan?.version ?? null,
+        rescheduledCount: retirement?.rescheduled ?? 0,
+        cancelledCount: retirement?.cancelled ?? 0,
+        plannedMinutes: scheduling.days.reduce((sum, d) => sum + d.plannedMinutes, 0),
+        sessionBudgetMinutes: materials.sessionBudgetMinutes ?? null,
+      },
       generatedBy: `scheduler_${ENGINE_VERSION}`,
     });
 
@@ -746,6 +769,15 @@ export async function hydrateTasksWithConcepts(
   return taskRows.map((task) => ({ task, concepts: conceptsByTaskId.get(task.id) ?? [] }));
 }
 
+/** What a committed re-plan changed. Written by `persistPlan`, read by the UI. */
+export interface PlanDiffSummary {
+  supersededVersion: number | null;
+  rescheduledCount: number;
+  cancelledCount: number;
+  plannedMinutes: number;
+  sessionBudgetMinutes: number | null;
+}
+
 export function toWirePlan(plan: PlanRow) {
   return {
     id: plan.id,
@@ -760,6 +792,7 @@ export function toWirePlan(plan: PlanRow) {
     slackMinutes: plan.slackMinutes,
     projectedCompletionDate: plan.projectedCompletionDate,
     createdAt: plan.createdAt.toISOString(),
+    diffSummary: plan.diffSummary as PlanDiffSummary | null,
   };
 }
 

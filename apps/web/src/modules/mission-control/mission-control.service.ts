@@ -1,14 +1,17 @@
 import { daysOverdue, retrievability } from '@friday/core';
 import { ApiError, type MissionControlResponse } from '@friday/contracts';
 import {
+  availabilityRepository,
   curriculumRepository,
   getDb,
   goalsRepository,
   memoryRepository,
   planningRepository,
+  type PlanRow,
   type UserRow,
 } from '@friday/db';
 import { getNextAction } from '../next-action/next-action.service';
+import { buildCapacityWindows } from '../planning/availability';
 import { hydrateTasksWithConcepts } from '../planning/planning.service';
 
 const DEFAULT_AVAILABLE_MINUTES = 60;
@@ -23,6 +26,56 @@ function todayKey(): string {
  * Mission, Next Action, Progress, Risks, and recommendation rationale, in one
  * response. Every field is a direct projection of `packages/core` output.
  */
+/**
+ * What the last re-plan did, in one sentence the learner can check.
+ *
+ * The failure this replaces is the one every study app has: miss Monday, and
+ * Tuesday silently becomes Monday plus Tuesday. FRIDAY does not do that — §10.4
+ * retires missed work and re-derives placement — but *doing* the right thing
+ * invisibly is indistinguishable from not doing it. The learner who missed a
+ * day opens the app, sees a normal-looking list, and has no way to know whether
+ * they got away with it or whether the debt is hiding somewhere.
+ *
+ * Every clause here is gated on a fact rather than composed as copy:
+ *
+ *   the count       comes from `diff_summary`, written by the transaction that
+ *                   actually retired those rows
+ *   "still X min"   is only said when today's planned minutes genuinely fit
+ *                   today's capacity, which is re-checked here at read time
+ *
+ * If either check fails the sentence is not shown. There is deliberately no
+ * fallback wording — an unverifiable reassurance is worse than silence, because
+ * a learner who is told nothing was added and then finds a doubled Tuesday has
+ * learned not to believe the next thing either.
+ */
+function describePlanChange(
+  plan: PlanRow | undefined,
+  capacityMinutes: number,
+  plannedMinutes: number,
+): { statement: string; evidence: string } | null {
+  if (!plan) return null;
+
+  const diff = plan.diffSummary as {
+    rescheduledCount?: number;
+    cancelledCount?: number;
+  } | null;
+
+  const rescheduled = diff?.rescheduledCount ?? 0;
+  if (rescheduled <= 0) return null;
+
+  const noun = rescheduled === 1 ? 'task' : 'tasks';
+  const statement = `${rescheduled} missed ${noun} went back into the queue.`;
+
+  // The reassurance is the load-bearing half, so it is the half that is
+  // re-derived from today's actual rows rather than trusted from the write.
+  const withinCapacity = capacityMinutes > 0 && plannedMinutes <= capacityMinutes;
+  const evidence = withinCapacity
+    ? `Nothing was added to today — still ${plannedMinutes} min of ${capacityMinutes}.`
+    : `Re-ranked by priority rather than pushed to tomorrow.`;
+
+  return { statement, evidence };
+}
+
 export async function getMissionControl(
   user: UserRow,
   goalId: string,
@@ -36,14 +89,39 @@ export async function getMissionControl(
   const curriculum = await curriculumRepository(db).findByGoal(user.id, goalId);
 
   const today = todayKey();
-  const todaysTasks = plan
+  /**
+   * Today's work — live rows only.
+   *
+   * `listTasksInWindow` filters by date and goal, not by status, so this list
+   * also contained the `rescheduled` and `cancelled` rows a re-plan had just
+   * retired. Today therefore looked busier than it was, and every total derived
+   * from it counted work the learner had explicitly been told was gone.
+   */
+  const allTodayRows = plan
     ? await planningRepository(db).listTasksInWindow(user.id, goalId, today, today)
     : [];
+  const todaysTasks = allTodayRows.filter(
+    (t) => t.status !== 'cancelled' && t.status !== 'rescheduled',
+  );
   const hydratedToday = await hydrateTasksWithConcepts(user.id, todaysTasks);
+
+  /**
+   * Capacity comes from the learner's availability, not from the plan.
+   *
+   * It was the sum of today's own task minutes, which made
+   * `plannedMinutes <= capacityMinutes` true by construction and the pair
+   * "90 min of 90" a tautology dressed as a measurement. Nothing could ever
+   * read as over capacity, including a day that genuinely was, so the one
+   * number on the dashboard that should warn the learner never could.
+   *
+   * The availability rules are the same source the scheduler plans against, so
+   * this figure and the planner's now agree by construction rather than by
+   * coincidence.
+   */
+  const availabilityRules = await availabilityRepository(db).listForUser(user.id);
   const capacityToday =
-    plan && todaysTasks.length > 0
-      ? todaysTasks.reduce((sum, t) => sum + t.estimatedMinutes, 0)
-      : 0;
+    buildCapacityWindows(availabilityRules, new Date(`${today}T00:00:00Z`), 1)[0]
+      ?.capacityMinutes ?? 0;
 
   const nextAction = await getNextAction(user, goalId, availableMinutes);
 
@@ -132,12 +210,16 @@ export async function getMissionControl(
     });
   }
 
+  const plannedToday = todaysTasks.reduce((sum, t) => sum + t.estimatedMinutes, 0);
+
   return {
     goalId,
+    /** Null unless the last committed re-plan actually retired missed work. */
+    planChange: describePlanChange(plan, capacityToday, plannedToday),
     today: {
       date: today,
       capacityMinutes: capacityToday,
-      plannedMinutes: todaysTasks.reduce((sum, t) => sum + t.estimatedMinutes, 0),
+      plannedMinutes: plannedToday,
       tasks: hydratedToday.map(({ task, concepts }) => ({
         id: task.id,
         type: task.type,

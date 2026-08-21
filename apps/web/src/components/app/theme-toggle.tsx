@@ -60,11 +60,11 @@ export function ThemeToggle() {
   return (
     <Button
       variant="ghost"
-      size="sm"
+      size="icon"
       onClick={toggle}
       // Stable label before mount, so the button is never briefly mislabelled.
       aria-label={dark === null ? 'Switch theme' : dark ? 'Switch to light' : 'Switch to dark'}
-      className="size-9 p-0"
+      className="p-0"
     >
       {dark ? <Moon className="size-4" aria-hidden /> : <Sun className="size-4" aria-hidden />}
     </Button>

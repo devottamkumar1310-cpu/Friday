@@ -78,6 +78,7 @@ export default async function DashboardPage() {
       goalTitle={goal.title}
       daysRemaining={mission.progress.daysRemaining}
       profile={profile}
+      planChange={mission.planChange}
       risks={mission.risks.map((r) => ({
         id: r.id,
         severity: r.severity,

@@ -108,6 +108,11 @@ async function smallTargets(target: Page): Promise<string[]> {
       // Inline links inside a paragraph are exempt: WCAG 2.5.8 excludes them,
       // and enlarging them would wreck the typography for no safety gain.
       if (el.tagName === 'A' && el.closest('p') !== null) continue;
+      // Nor is a skip link a tap target. It is deliberately 1x1 until focused,
+      // and the only way to "fix" it would be to put it permanently on screen.
+      const cs = getComputedStyle(el);
+      if (cs.clipPath === 'inset(50%)' || cs.clip === 'rect(0px, 0px, 0px, 0px)') continue;
+      if (r.right < 0 || r.bottom < 0 || r.left > window.innerWidth) continue;
       if (r.height < 44 || r.width < 24) {
         const label = (el.getAttribute('aria-label') ?? el.textContent ?? '').trim().slice(0, 30);
         out.push(
@@ -119,14 +124,38 @@ async function smallTargets(target: Page): Promise<string[]> {
   });
 }
 
-/** Text the theme has rendered near-invisible — the hardcoded-colour bug. */
+/**
+ * Text the theme has rendered near-invisible — the hardcoded-colour bug.
+ *
+ * Colours are resolved through a canvas rather than parsed with a regex. The
+ * design tokens are `oklch()`, which `getComputedStyle` returns verbatim; a
+ * naive `[\d.]+` match reads `oklch(0.17 0.008 260)` as the RGB triple
+ * `(0.17, 0.008, 260)` and reports every element in the dark theme at 1.03:1.
+ * The first run of this audit produced 28 such "defects" and not one of them
+ * was real. A canvas accepts any colour string the browser understands and
+ * hands back the sRGB the user actually sees.
+ */
 async function lowContrastText(target: Page): Promise<string[]> {
   return target.evaluate(() => {
-    const parse = (c: string): number[] => {
-      const m = c.match(/[\d.]+/g);
-      if (!m) return [0, 0, 0, 1];
-      return [Number(m[0]), Number(m[1]), Number(m[2]), m[3] === undefined ? 1 : Number(m[3])];
+    const canvas = document.createElement('canvas');
+    canvas.width = 1;
+    canvas.height = 1;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+
+    const cache = new Map<string, number[]>();
+    const toRgba = (css: string): number[] => {
+      const hit = cache.get(css);
+      if (hit) return hit;
+      ctx.clearRect(0, 0, 1, 1);
+      ctx.fillStyle = '#000';
+      ctx.fillStyle = css;
+      ctx.fillRect(0, 0, 1, 1);
+      const d = ctx.getImageData(0, 0, 1, 1).data;
+      const out = [d[0]!, d[1]!, d[2]!, d[3]! / 255];
+      cache.set(css, out);
+      return out;
     };
+
     const lum = (c: number[]) => {
       const f = (v: number) => {
         const x = v / 255;
@@ -134,26 +163,48 @@ async function lowContrastText(target: Page): Promise<string[]> {
       };
       return 0.2126 * f(c[0]!) + 0.7152 * f(c[1]!) + 0.0722 * f(c[2]!);
     };
+
+    /** The first ancestor that actually paints something behind this text. */
     const bgOf = (el: HTMLElement): number[] => {
       let cur: HTMLElement | null = el;
       while (cur) {
-        const c = parse(getComputedStyle(cur).backgroundColor);
+        const c = toRgba(getComputedStyle(cur).backgroundColor);
         if (c[3]! > 0.1) return c;
         cur = cur.parentElement;
       }
-      return [255, 255, 255, 1];
+      return toRgba(getComputedStyle(document.body).backgroundColor);
     };
+
+    /**
+     * Skip links and other visually-hidden text are not contrast defects.
+     * They are deliberately unreadable until focused, and "fixing" them would
+     * mean putting them on screen.
+     */
+    const isVisuallyHidden = (el: HTMLElement): boolean => {
+      const s = getComputedStyle(el);
+      if (s.clipPath === 'inset(50%)' || s.clip === 'rect(0px, 0px, 0px, 0px)') return true;
+      const r = el.getBoundingClientRect();
+      return r.right < 0 || r.bottom < 0 || r.left > window.innerWidth;
+    };
+
     const out: string[] = [];
     for (const el of Array.from(document.querySelectorAll<HTMLElement>('body *'))) {
       const text = (el.textContent ?? '').trim();
       if (!text || el.children.length > 0) continue;
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) continue;
-      const fg = parse(getComputedStyle(el).color);
+      if (isVisuallyHidden(el)) continue;
+
+      const style = getComputedStyle(el);
+      if (style.visibility === 'hidden' || style.opacity === '0') continue;
+
+      const fg = toRgba(style.color);
       if (fg[3]! < 0.1) continue;
+
       const l1 = lum(fg);
       const l2 = lum(bgOf(el));
       const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+
       // 3:1 rather than 4.5:1 — this pass hunts for text that has effectively
       // disappeared, not for every borderline body-copy shade.
       if (ratio < 3) out.push(`"${text.slice(0, 32)}" contrast ${ratio.toFixed(2)}:1`);
@@ -185,8 +236,8 @@ for (const vp of VIEWPORTS) {
         }
       }
 
-      const p0 = findings.filter((f) => f.severity === 'P0' && f.where.includes(`@${vp.label}px`));
-      expect(p0.map((f) => `${f.kind} ${f.where} ${f.detail}`)).toStrictEqual([]);
+      const here = findings.filter((f) => f.where.includes(`@${vp.label}px`));
+      expect(here.map((f) => `${f.severity} ${f.kind} ${f.where} ${f.detail}`)).toStrictEqual([]);
     });
   }
 }
