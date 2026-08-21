@@ -168,6 +168,22 @@ export function planningRepository(db: Executor) {
         );
     },
 
+    /**
+     * Many tasks, one round trip.
+     *
+     * The session-history screen resolved task titles by calling `findTask` in
+     * a loop — twenty sessions meant twenty sequential queries. Against a
+     * managed Postgres roughly 150ms away that is three seconds of latency to
+     * render a list the database could return in one.
+     */
+    async findTasksByIds(userId: string, taskIds: string[]): Promise<TaskRow[]> {
+      if (taskIds.length === 0) return [];
+      return db
+        .select()
+        .from(tasks)
+        .where(and(eq(tasks.userId, userId), inArray(tasks.id, taskIds)));
+    },
+
     async findTask(userId: string, taskId: string): Promise<TaskRow | undefined> {
       const [row] = await db
         .select()

@@ -85,10 +85,25 @@ export async function getMissionControl(
   const goal = await goalsRepository(db).findById(user.id, goalId);
   if (!goal) throw ApiError.notFound();
 
-  const plan = await planningRepository(db).findActive(user.id, goalId);
-  const curriculum = await curriculumRepository(db).findByGoal(user.id, goalId);
-
+  /**
+   * Independent reads, issued together.
+   *
+   * These four queries do not depend on each other, and were awaited one at a
+   * time purely because that is how the code was written. Measured against a
+   * managed Postgres about 150ms away, Mission Control — the dashboard's own
+   * endpoint, the first thing a learner loads — took 3.5s at p50 and 6.5s at
+   * p95, almost all of it round trips waiting in single file.
+   *
+   * Latency is the environment's fault; issuing avoidable round trips serially
+   * is ours. This is the half we control.
+   */
   const today = todayKey();
+  const [plan, curriculum, availabilityRules, allTodayRows] = await Promise.all([
+    planningRepository(db).findActive(user.id, goalId),
+    curriculumRepository(db).findByGoal(user.id, goalId),
+    availabilityRepository(db).listForUser(user.id),
+    planningRepository(db).listTasksInWindow(user.id, goalId, today, today),
+  ]);
   /**
    * Today's work — live rows only.
    *
@@ -97,13 +112,9 @@ export async function getMissionControl(
    * retired. Today therefore looked busier than it was, and every total derived
    * from it counted work the learner had explicitly been told was gone.
    */
-  const allTodayRows = plan
-    ? await planningRepository(db).listTasksInWindow(user.id, goalId, today, today)
+  const todaysTasks = plan
+    ? allTodayRows.filter((t) => t.status !== 'cancelled' && t.status !== 'rescheduled')
     : [];
-  const todaysTasks = allTodayRows.filter(
-    (t) => t.status !== 'cancelled' && t.status !== 'rescheduled',
-  );
-  const hydratedToday = await hydrateTasksWithConcepts(user.id, todaysTasks);
 
   /**
    * Capacity comes from the learner's availability, not from the plan.
@@ -118,12 +129,15 @@ export async function getMissionControl(
    * this figure and the planner's now agree by construction rather than by
    * coincidence.
    */
-  const availabilityRules = await availabilityRepository(db).listForUser(user.id);
   const capacityToday =
     buildCapacityWindows(availabilityRules, new Date(`${today}T00:00:00Z`), 1)[0]
       ?.capacityMinutes ?? 0;
 
-  const nextAction = await getNextAction(user, goalId, availableMinutes);
+  // Hydration and the Next Action are independent of each other too.
+  const [hydratedToday, nextAction] = await Promise.all([
+    hydrateTasksWithConcepts(user.id, todaysTasks),
+    getNextAction(user, goalId, availableMinutes),
+  ]);
 
   // --- Progress: weighted mastery over the curriculum (exam-weight-weighted,
   // not "% tasks done" — DATABASE_DESIGN §4.7 progress_snapshots note). ---

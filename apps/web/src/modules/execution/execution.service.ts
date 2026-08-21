@@ -331,11 +331,8 @@ export async function listSessions(user: UserRow, limit = 20) {
   const sessions = await executionRepository(db).recentSessions(user.id, limit);
 
   const taskIds = [...new Set(sessions.map((s) => s.taskId).filter((id): id is string => !!id))];
-  const titleByTaskId = new Map<string, string>();
-  for (const taskId of taskIds) {
-    const task = await planningRepository(db).findTask(user.id, taskId);
-    if (task) titleByTaskId.set(taskId, task.title);
-  }
+  const tasks = await planningRepository(db).findTasksByIds(user.id, taskIds);
+  const titleByTaskId = new Map(tasks.map((t) => [t.id, t.title]));
 
   return sessions.map((s) =>
     toWireSession(s, s.taskId ? (titleByTaskId.get(s.taskId) ?? null) : null),
