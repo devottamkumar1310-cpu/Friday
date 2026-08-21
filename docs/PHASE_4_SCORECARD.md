@@ -144,8 +144,23 @@ absorbed into a raised budget.
    making `/plan` and `/progress` narrate the adaptive loop the way the dashboard
    now does — are not done. The dashboard carries the whole experience today.
 2. **`learner: { reliability, pace }` is still hard-coded to 1.0** at every
-   `generatePlan` call site. The engine supports learner factors; the application
-   never derives them, so the pace model remains inert.
+   `generatePlan` and `assessFeasibility` call site, so feasibility assumes the
+   learner delivers 100% of the time they declared. That is optimistic in
+   exactly the way CR-011 was, and it is why plans can feel unrealistic.
+
+   It was not wired in this phase because **the evidence does not exist yet**.
+   `reliability` is defined as planned-versus-actual minutes;
+   `study_sessions.planned_minutes` is never written by any service, and
+   `SessionObservation.plannedMinutes` is declared on the adaptive engine's
+   input and never read by it either — a dead field on both ends. Deriving
+   reliability from session-completion rate instead would need a floor constant
+   picked out of the air, and pushing an arbitrary number into the verdict every
+   learner sees is the kind of guess this phase spent its time removing.
+
+   The honest order is: write `planned_minutes` at session start (the task's
+   estimate is right there), collect a fortnight of it, then calibrate against
+   real data.
+
 3. **No cron.** New-day adaptation fires on dashboard render. A learner who does
    not open the app is not re-planned.
 4. **Wall-clock budgets are unverified.** They are asserted only against a
