@@ -25,6 +25,8 @@ must exist end to end, or the sentence is removed. Nothing here is a caption.
 | **Struggling learners** | could receive an **empty plan**                       | receive 10-minute blocks matching a 10-minute dial                   |
 | **Coach**               | free to invent a minute figure                        | bound to the task's minutes or the enforced budget                   |
 | **Today's capacity**    | sum of today's tasks — a tautology                    | the learner's own availability                                       |
+| **Constraint changes**  | plan silently became a different plan                 | one line with the hours that actually moved                          |
+| **Review scheduling**   | a sentence about what FSRS does                       | the date FSRS just wrote, per concept                                |
 
 The single most important change is task sizing. It is what converts "FRIDAY
 occasionally changes some numbers" into "FRIDAY gave me something I can finish
@@ -49,6 +51,24 @@ Every number in that is the same number. The dial is 10 because nine real
 sessions say so; the task row in Postgres says `estimated_minutes = 10` because
 the planner built it to that budget; and the Coach, asked the same question, is
 handed the same figure and forbidden from choosing another.
+
+A learner who finishes a session sees what it bought them, and when it comes
+back — both read from the write that just happened:
+
+> Newton's Laws of Motion
+> **0% → 10%**
+> Back in 3 days · Mon, 24 Aug
+
+A learner who edited their availability sees the link between the setting they
+changed and the plan that changed under them:
+
+> Your available time shrank, so I rebuilt the plan to fit.
+> _90h of study time in the plan, now 23h._
+
+Note what that sentence does **not** say. The plan row knows capacity moved; it
+does not know whether the learner moved an exam or picked up a shift, so no
+motive is claimed. A test asserts that — and caught the first draft saying
+"before the exam", which is also wrong for three of the four goal types.
 
 A learner who missed yesterday sees one added line:
 

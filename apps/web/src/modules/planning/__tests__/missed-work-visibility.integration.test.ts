@@ -139,6 +139,78 @@ describe('missed-work redistribution is visible and true', () => {
     });
   });
 
+  describe('a learner who changed a constraint themselves', () => {
+    let learner: Learner;
+
+    beforeAll(async () => {
+      learner = await createLearner({ dailyMinutes: 120, targetDays: 45 });
+      const { setAvailability } = await import('../../identity/settings.service');
+      await setAvailability(learner.user, {
+        rules: [0, 1, 2, 3, 4, 5, 6].map((dayOfWeek) => ({
+          dayOfWeek,
+          startTime: '09:00:00',
+          endTime: '09:30:00',
+          kind: 'available' as const,
+        })),
+      });
+    });
+
+    afterAll(async () => {
+      if (learner) await destroyLearner(learner);
+    });
+
+    it('is told the plan was rebuilt, with the hours that moved', async () => {
+      const mission = await getMissionControl(learner.user, learner.goal.id, 30);
+      expect(mission.planChange, 'a self-caused rebuild must be explained').not.toBeNull();
+      expect(mission.planChange!.statement).toMatch(/shrank/);
+
+      // eslint-disable-next-line no-console -- the sentence IS the deliverable
+      console.log(
+        `
+  CONSTRAINT: ${mission.planChange!.statement} ${mission.planChange!.evidence}
+`,
+      );
+    });
+
+    it('the hours quoted are the plan rows, not an adjective', async () => {
+      const { getDb } = await import('@friday/db');
+      const { sql } = await import('drizzle-orm');
+      const rows = await getDb().execute<{ avail: number; diff: unknown }>(sql`
+        select available_minutes as avail, diff_summary as diff from plans
+         where goal_id = ${learner.goal.id} and status = 'active'
+      `);
+      const avail = Number(rows.rows[0]!.avail);
+      const previous = (rows.rows[0]!.diff as { previousAvailableMinutes: number })
+        .previousAvailableMinutes;
+
+      const mission = await getMissionControl(learner.user, learner.goal.id, 30);
+      expect(mission.planChange!.evidence).toContain(`${Math.round(previous / 60)}h`);
+      expect(mission.planChange!.evidence).toContain(`${Math.round(avail / 60)}h`);
+      expect(avail).toBeLessThan(previous);
+    });
+
+    it('claims no motive it cannot know', async () => {
+      // The plan row knows capacity moved. It does not know whether the learner
+      // moved an exam or picked up a shift, and inventing that is the exact
+      // fabrication this codebase keeps deleting.
+      const mission = await getMissionControl(learner.user, learner.goal.id, 30);
+      const sentence = `${mission.planChange!.statement} ${mission.planChange!.evidence}`;
+
+      /**
+       * The line under test is a *motive*, not a noun.
+       *
+       * The first version of this regex banned the word "exam" and duly caught
+       * "90h of study time before the exam" — which is the horizon the capacity
+       * was computed against, and entirely factual. What must never appear is a
+       * claim about *why* the learner changed the setting, because the plan row
+       * knows capacity moved and nothing else.
+       */
+      expect(sentence).not.toMatch(
+        /because you|you must|you seem|you're busy|you are busy|life got|fell behind|struggling with/i,
+      );
+    });
+  });
+
   describe('a brand-new learner', () => {
     let learner: Learner;
 

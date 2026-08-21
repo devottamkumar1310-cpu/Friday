@@ -394,6 +394,10 @@ async function persistPlan(
         supersededVersion: activePlan?.version ?? null,
         rescheduledCount: retirement?.rescheduled ?? 0,
         cancelledCount: retirement?.cancelled ?? 0,
+        // The capacity this plan replaced, so a constraint change can be
+        // described with the two numbers that actually moved rather than an
+        // adjective.
+        previousAvailableMinutes: activePlan?.availableMinutes ?? null,
         plannedMinutes: scheduling.days.reduce((sum, d) => sum + d.plannedMinutes, 0),
         sessionBudgetMinutes: materials.sessionBudgetMinutes ?? null,
       },
@@ -774,6 +778,7 @@ export interface PlanDiffSummary {
   supersededVersion: number | null;
   rescheduledCount: number;
   cancelledCount: number;
+  previousAvailableMinutes: number | null;
   plannedMinutes: number;
   sessionBudgetMinutes: number | null;
 }

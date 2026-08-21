@@ -58,7 +58,43 @@ function describePlanChange(
   const diff = plan.diffSummary as {
     rescheduledCount?: number;
     cancelledCount?: number;
+    previousAvailableMinutes?: number | null;
   } | null;
+
+  /**
+   * A constraint the learner changed themselves, described by what moved.
+   *
+   * `availability_changed` and `goal_changed` are the two re-plans the learner
+   * *caused*, and they are the two where a silent rebuild is most confusing:
+   * they edited a setting, the plan quietly became a different plan, and
+   * nothing on the dashboard connected the two. The link is worth stating —
+   * but only with the actual figures, because "FRIDAY adjusted your plan" is
+   * the kind of sentence that sounds adaptive and says nothing.
+   *
+   * Deliberately no wording for the *reason* beyond the fact of it. The plan row
+   * knows capacity moved; it does not know the learner moved an exam rather
+   * than a work shift, and inventing that motive is exactly the fabrication
+   * this codebase keeps deleting.
+   */
+  const previous = diff?.previousAvailableMinutes ?? null;
+  if (
+    (plan.reason === 'availability_changed' || plan.reason === 'goal_changed') &&
+    previous !== null &&
+    previous > 0 &&
+    plan.availableMinutes !== previous
+  ) {
+    const grew = plan.availableMinutes > previous;
+    const hoursBefore = Math.round(previous / 60);
+    const hoursAfter = Math.round(plan.availableMinutes / 60);
+    return {
+      statement: grew
+        ? `You freed up time, so I rebuilt the plan around it.`
+        : `Your available time shrank, so I rebuilt the plan to fit.`,
+      // "before the exam" would be wrong for a `skill` or `course` goal, and the
+      // plan row does not know which this is. The horizon is the honest noun.
+      evidence: `${hoursBefore}h of study time in the plan, now ${hoursAfter}h.`,
+    };
+  }
 
   const rescheduled = diff?.rescheduledCount ?? 0;
   if (rescheduled <= 0) return null;
