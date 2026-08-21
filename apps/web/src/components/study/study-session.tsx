@@ -145,6 +145,17 @@ export function StudySession({
   const [outcome, setOutcome] = useState<
     { conceptId: string; before: number; after: number; delta: number }[] | null
   >(null);
+  /**
+   * When FRIDAY will bring each concept back.
+   *
+   * The completion response has always carried this — `nextDue` and
+   * `intervalDays`, straight from the FSRS write — and the screen threw it away
+   * and printed a sentence about review timing instead. The learner was told
+   * the trick existed without being shown it happening to them.
+   */
+  const [review, setReview] = useState<
+    { conceptId: string; nextDue: string; intervalDays: number }[] | null
+  >(null);
 
   const leavingRef = useRef(false);
   const errorRef = useRef<HTMLDivElement>(null);
@@ -273,6 +284,7 @@ export function StudySession({
       // Shown as a screen, not a toast. This is the payoff of the whole loop
       // (pain point P10) and it used to vanish in four seconds mid-navigation.
       setOutcome(result.data.changes.mastery);
+      setReview(result.data.changes.retention);
       setPhase('done');
     } catch (e) {
       setError(e instanceof ApiClientError ? e.message : 'Could not save the session.');
@@ -328,12 +340,34 @@ export function StudySession({
                       <ArrowRight className="size-5 text-muted-foreground" aria-hidden />
                       <span className="text-success">{Math.round(change.after * 100)}%</span>
                     </div>
+                    {(() => {
+                      // The scheduled review, named. This is the FSRS write that
+                      // just happened, not a description of what FSRS does.
+                      const due = review?.find((r) => r.conceptId === change.conceptId);
+                      if (!due) return null;
+                      const when =
+                        due.intervalDays <= 0
+                          ? 'later today'
+                          : due.intervalDays === 1
+                            ? 'tomorrow'
+                            : `in ${due.intervalDays} days`;
+                      return (
+                        <p className="text-center text-xs text-muted-foreground">
+                          Back {when} ·{' '}
+                          {new Date(due.nextDue).toLocaleDateString(undefined, {
+                            weekday: 'short',
+                            day: 'numeric',
+                            month: 'short',
+                          })}
+                        </p>
+                      );
+                    })()}
                   </div>
                 );
               })}
               <p className="border-t border-border pt-3 text-xs leading-relaxed text-muted-foreground">
-                FRIDAY will bring these back for review right before you would have forgotten them.
-                That timing is the whole trick.
+                Those dates are when you would be about to forget it. Coming back then is what makes
+                it stick.
               </p>
             </CardContent>
           </Card>
