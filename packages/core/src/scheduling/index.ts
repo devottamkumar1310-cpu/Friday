@@ -126,19 +126,49 @@ export interface SchedulingInput {
 }
 
 /**
- * The smallest block that is still worth calling a study session.
+ * The default smallest block that is still worth calling a study session.
  *
- * Below this a "task" stops being learning and becomes an interruption: there
- * is no topic worth opening, reading into, and forming a judgement about in
- * under a quarter of an hour. So a budget tighter than this does not produce
- * tiny fragments — it produces nothing, and the learner is told there is
- * nothing that fits rather than handed a scrap.
+ * Below a quarter of an hour a "task" generally stops being learning and
+ * becomes an interruption, so this is the floor for a learner the engine has no
+ * reading on.
  *
  * A concept whose *whole* estimate is already smaller than this is exempt: a
  * nine-minute concept is a nine-minute task, and padding it to fifteen would be
  * inventing work to fill a number.
  */
 const MIN_MEANINGFUL_BLOCK_MINUTES = 15;
+
+/**
+ * The floor for a learner the engine *has* a reading on.
+ *
+ * The adaptive dial bottoms out at 10 minutes; this floor was a flat 15. Those
+ * two constants contradicted each other, and the learner caught in the gap was
+ * the worst possible one: a struggling learner, whose budget the engine had
+ * just cut to 10 because they abandon everything after three minutes, got a
+ * **completely empty plan**. Nothing could be placed, because nothing could be
+ * smaller than 15. The person most in need of one achievable task was handed
+ * none at all.
+ *
+ * A block is meaningful relative to the person doing it. If FRIDAY has
+ * concluded from real sessions that this learner studies in ten-minute
+ * stretches, then ten minutes is what a meaningful block is for them, and
+ * insisting on fifteen guarantees the abandonment the shortened budget exists
+ * to prevent.
+ */
+function meaningfulBlockFloor(sessionBudgetMinutes: number | undefined): number {
+  if (sessionBudgetMinutes === undefined) return MIN_MEANINGFUL_BLOCK_MINUTES;
+  // Bends, but not without limit. Ten minutes is the lowest the adaptive dial
+  // itself will ever conclude, so it is the lowest any *evidence* can justify;
+  // a tighter budget than that did not come from observing the learner, and
+  // honouring it would be fragmenting a topic rather than adapting to anyone.
+  return Math.max(
+    ABSOLUTE_BLOCK_FLOOR_MINUTES,
+    Math.min(MIN_MEANINGFUL_BLOCK_MINUTES, sessionBudgetMinutes),
+  );
+}
+
+/** Mirrors `MIN_SESSION_MINUTES` in `core/adaptive` — the dial's own floor. */
+const ABSOLUTE_BLOCK_FLOOR_MINUTES = 10;
 
 const DAY_MS = 86_400_000;
 
@@ -330,8 +360,9 @@ export function generatePlan(input: SchedulingInput): SchedulingResult {
         const minutes = Math.min(owed, ceiling);
 
         // Never a fragment — but never padded either. A concept smaller than the
-        // floor is taken whole rather than stretched to reach it.
-        if (minutes < Math.min(MIN_MEANINGFUL_BLOCK_MINUTES, owed)) continue;
+        // floor is taken whole rather than stretched to reach it, and the floor
+        // itself bends to a learner who has shown they study in shorter bursts.
+        if (minutes < Math.min(meaningfulBlockFloor(input.sessionBudgetMinutes), owed)) continue;
         const mastery = input.masteryStates.get(id);
         const memory = input.memoryStates.get(id);
         const prereqs = prerequisiteInputs(id);

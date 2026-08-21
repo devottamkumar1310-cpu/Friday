@@ -624,6 +624,208 @@ Reformatting the 42 would have produced an enormous diff and fixed nothing durab
 
 ---
 
+## CR-019 — Task sizing became genuinely adaptive
+
+**Closes CR-017.**
+
+CR-017 removed a sentence because the product could not back it: the panel said
+"about 15 minutes" and the task underneath said "50 min". The wire was never
+missing — the dial reached the selector, which walks the ranking for a task that
+fits. But every task had been sized at _plan_ time from its concept's own
+estimate, so for a learner who studies in fifteen-minute blocks against a
+curriculum of forty-to-sixty-minute concepts nothing ever fitted, and
+`core/priority` correctly returned the top candidate whole (§7.2 step 3).
+
+**Change.** `generatePlan` takes `sessionBudgetMinutes` and sizes blocks to it.
+A `remainingByConceptId` ledger replaces the previous boolean "scheduled or
+not", so a concept's remainder stays owed and is picked up on a later day.
+
+That second half mattered more than expected: placement previously truncated
+`minutes` to whatever capacity was left, so a fifty-minute concept meeting a
+twenty-minute gap became a twenty-minute task and the other thirty minutes
+ceased to exist. The plan quietly decided the learner needed less work than it
+had itself calculated.
+
+Only a fully-allocated concept counts as covered, so a half-studied prerequisite
+still cannot unblock its dependents (I-4).
+
+| mastery of the rule            | behaviour                                |
+| ------------------------------ | ---------------------------------------- |
+| `band: unknown`                | no budget; tasks keep their natural size |
+| concept smaller than the floor | taken whole, never padded                |
+| budget below the floor         | nothing placed, rather than a scrap      |
+
+**Measured:** claim 15 min, dial 15 min, persisted task 15 min.
+
+**Invariant changed.** "One concept, one task" was sound while a concept meant a
+single task. Splitting breaks that premise deliberately, so nine assertions
+across five suites were restated from counting rows to the property they were
+written to protect — the same work must never be offered twice — now expressed
+as `duplicateConceptsOnSameDay` plus conservation of per-concept minutes.
+
+---
+
+## CR-020 — A struggling learner could be given an empty plan
+
+**Found by:** the ten-persona pass, and only after its first assertion was
+strengthened.
+
+`core/adaptive`'s dial bottoms out at `MIN_SESSION_MINUTES = 10`. The
+scheduler's meaningful-block floor was a flat 15. Those two constants
+contradicted each other, and the learner caught in the gap was the worst
+possible one: a struggling learner, whose budget had just been cut to 10
+_because_ they abandon everything after three minutes, got **no tasks at all**.
+
+The persona test hid it: `Math.max()` of an empty array is `-Infinity`, which
+satisfies `<= 10`. The assertion passed on a plan with nothing in it.
+
+**Change.** The floor bends to the learner — `min(15, budget)` — bounded below
+at 10, the lowest the dial itself will ever conclude. A block is meaningful
+relative to the person doing it; insisting on fifteen for someone the engine has
+measured at ten guarantees the abandonment the shortened budget exists to
+prevent. A budget below 10 did not come from observing anyone and still places
+nothing.
+
+**Invariants affected:** none. **Breaking:** no.
+
+---
+
+## CR-021 — Idle database connections collapsed the test suite
+
+`pg.Pool` emits `error` when a client fails while sitting idle. That is routine
+against serverless Postgres — the provider closes idle connections — but Node
+treats an unhandled `error` on an EventEmitter as fatal, and no handler was
+attached. A normal suspension surfaced as a whole test file's `beforeAll`
+collapsing and taking a hundred assertions with it as "skipped".
+
+**Change.** An `error` handler, `idleTimeoutMillis` dropped below the provider's
+own cut-off, and TCP keepalives on, so the pool recycles a socket before the
+server closes it rather than handing out a dead one.
+
+**Measured:** full integration suite 8 files failed / 102 skipped → 8 passed /
+109 passed.
+
+`console.warn` rather than `@friday/observability`: `packages/db` sits below it
+and the boundary is lint-enforced. The dependency was added, the rule caught it,
+and the rule was right.
+
+---
+
+## CR-022 — The Coach could contradict the planner about the enforced dial
+
+The context packet already carried `targetSessionMinutes` with a clear
+instruction. The _prompt_ then undid it: "Always close by asking for a number of
+minutes", with worked examples of 8, 12, 18 and 20, and nothing tying the figure
+to the engine. A learner could be shown a 15-minute task and told to give it 20.
+
+**Change.** The time box is explicitly not the model's to choose — it is the
+minutes on the recommended task, or the enforced budget when no task is named.
+The examples are labelled as illustrating sentence shape rather than supplying
+values.
+
+**Verified by:** `coach-consistency.integration.test.ts`, asserting on the
+**packet** rather than on generated text, because the packet is deterministic
+and a guarantee made there holds on every call.
+
+---
+
+## CR-023 — Every icon button and form control was below the tap-target floor
+
+**Found by:** `audit-matrix.spec.ts` — 7 surfaces x 6 viewports x 2 themes.
+
+P0 was clean: no overflow and no contrast failure anywhere. 336 tap-target
+findings reduced to six distinct controls, all genuine:
+
+| control              | was  | now |
+| -------------------- | ---- | --- |
+| icon buttons (token) | 40px | 44  |
+| menu disclosure      | 36px | 44  |
+| theme toggle         | 36px | 44  |
+| wordmark link        | 20px | 44  |
+| nav links            | 32px | 44  |
+| inputs and selects   | 40px | 44  |
+
+The menu disclosure is the primary navigation control on a phone. Fixed at the
+shared primitive wherever one existed.
+
+The first audit run also produced 28 contrast "defects", every one of them the
+detector's fault: the tokens are `oklch()`, and a `[\d.]+` regex reads
+`oklch(0.17 0.008 260)` as an RGB triple. Colours now resolve through a canvas.
+
+---
+
+## CR-024 — Mission Control's capacity was a tautology, and today counted retired work
+
+Both found while making redistribution visible.
+
+`capacityToday` was the **sum of today's own task minutes**, so
+`plannedMinutes <= capacityMinutes` held by construction and the dashboard read
+"90 min of 90" whatever the learner had actually made time for. Nothing could
+ever show as over capacity, including a day that was. It now comes from the
+availability rules the scheduler plans against, so the two agree by construction.
+
+`listTasksInWindow` filters by date and goal, not status, so today's list
+included the `rescheduled` and `cancelled` rows a re-plan had just retired —
+inflating every total drawn from it.
+
+---
+
+## CR-025 — Redistribution was correct and invisible
+
+FRIDAY has retired missed work and re-derived placement since Phase 3. But doing
+the right thing invisibly is indistinguishable from not doing it: a learner who
+missed a day saw a normal-looking list and no way to know whether the debt was
+hiding somewhere.
+
+**Change.** `plans.diff_summary` — a column that has existed since Phase 1 and
+was written as literal `null` on every plan ever created — now records what the
+retiring transaction actually did. The panel renders one line inside the
+existing "What I changed" beat; no new card.
+
+Every clause is gated on a fact. The count comes from the write; the "nothing
+was added" half is re-derived at read time and simply omitted if it does not
+hold. There is deliberately no fallback wording: a learner told nothing was
+added who then finds a doubled Tuesday stops believing the next claim too.
+
+> 1 missed task went back into the queue.
+> Nothing was added to today — still 40 min of 60.
+
+---
+
+## CR-026 — Round trips, and a performance budget that could not fail for our reasons
+
+The performance suite had been failing every budget for the whole phase. Its own
+header explained why nobody could act on it: it claimed to run "against a local
+PostgreSQL". Against a managed Postgres in another region one round trip costs
+~138ms, so a 200ms read budget is unreachable regardless of the code.
+
+Two problems were hiding behind that, and only one was the environment's.
+
+**Real N+1s.** `listSessions` resolved task titles by calling `findTask` in a
+loop. Mission Control awaited four independent reads one at a time, then
+hydration and the Next Action separately; `getNextAction` did the same with the
+goal lookup, the candidate build and the decision trace, and again with
+concepts/mastery/memory.
+
+| endpoint        | p50 before | p50 after | round trips |
+| --------------- | ---------- | --------- | ----------- |
+| mission-control | 3560ms     | 1951ms    | ~24 → ~12   |
+| next-action     | 1139ms     | 991ms     | ~9 → ~6     |
+| /tasks          | 1237ms     | 772ms     | ~8 → ~6     |
+
+**A measurement worth keeping.** The suite now measures its own floor and
+reports every figure in round trips as well as milliseconds. Round trips are
+what the application controls; latency per trip is what the environment imposes.
+The absolute NFR budgets are still asserted, but only when the floor shows a
+co-located database.
+
+This is not a weaker test. Before, every endpoint failed for the same
+un-actionable reason and a genuine regression would have been invisible in the
+noise. Now `next-action` fails if it grows past 8 trips — and it caught itself
+at 9 during this work, which is how it ended up at 6.
+
+---
+
 ---
 
 ## Baseline History

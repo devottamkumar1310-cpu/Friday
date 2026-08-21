@@ -356,3 +356,34 @@ describe('core/scheduling — adaptive task sizing', () => {
     expect(plan.days[0]?.tasks[0]?.estimatedMinutes).toBe(20);
   });
 });
+
+describe('core/scheduling — the block floor bends to the learner', () => {
+  it('a 10-minute budget produces 10-minute blocks, not an empty plan', () => {
+    /**
+     * Regression for the worst failure this engine has had.
+     *
+     * The adaptive dial bottoms out at 10 minutes; the block floor was a flat
+     * 15. A struggling learner — whose budget had just been cut to 10 precisely
+     * because they abandon everything after three minutes — could therefore be
+     * given nothing at all, because no block could be smaller than 15. The
+     * person most in need of one achievable task got an empty plan, and the
+     * persona test hid it because `Math.max()` of an empty array is -Infinity,
+     * which satisfies `<= 10`.
+     */
+    const plan = generatePlan(
+      baseInput({ concepts: [node('a', { estimatedMinutes: 50 })], sessionBudgetMinutes: 10 }),
+    );
+    const tasks = plan.days.flatMap((d) => d.tasks);
+
+    expect(tasks.length, 'a struggling learner must still get work').toBeGreaterThan(0);
+    for (const t of tasks) expect(t.estimatedMinutes).toBeLessThanOrEqual(10);
+    expect(tasks.reduce((s, t) => s + t.estimatedMinutes, 0)).toBe(50);
+  });
+
+  it('an unread learner keeps the default 15-minute floor', () => {
+    // The floor only bends for a learner the engine has actually read. With no
+    // budget there is no evidence to bend it with.
+    const plan = generatePlan(baseInput({ concepts: [node('a', { estimatedMinutes: 12 })] }));
+    expect(plan.days.flatMap((d) => d.tasks)[0]?.estimatedMinutes).toBe(12);
+  });
+});
