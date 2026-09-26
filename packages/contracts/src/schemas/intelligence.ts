@@ -78,7 +78,16 @@ export const InsightSchema = z
     body: z.string(),
     severity: z.number().int(),
     conceptIds: z.array(UuidSchema),
-    evidence: z.unknown(),
+    evidence: z.union([
+      z.unknown(),
+      z.null(),
+      z.object({
+        evidenceCount: z.number().int(),
+        beliefConfidence: z.number(),
+        lastEvidenceAt: DateTimeSchema.nullable(),
+        provisional: z.boolean(),
+      }),
+    ]).default(null),
     createdAt: DateTimeSchema,
   })
   .openapi('Insight');

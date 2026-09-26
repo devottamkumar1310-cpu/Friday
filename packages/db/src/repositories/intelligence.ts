@@ -8,6 +8,7 @@ import {
   type ProgressSnapshotRow,
 } from '../schema/intelligence';
 import type { Executor } from './executor';
+import { decisionTraces } from '../schema/traces';
 
 /** Progress snapshots and insights — DATABASE_DESIGN §4.7. */
 export function intelligenceRepository(db: Executor) {
@@ -53,7 +54,18 @@ export function intelligenceRepository(db: Executor) {
         .orderBy(progressSnapshots.snapshotDate);
     },
 
-    async createInsight(row: NewInsightRow): Promise<InsightRow> {
+    async createInsight(row: NewInsightRow, userId: string): Promise<InsightRow> {
+      // Validate that if a decisionTraceId is provided, it exists and belongs to the same user
+      if (row.decisionTraceId) {
+        const trace = await db
+          .select()
+          .from(decisionTraces)
+          .where(and(eq(decisionTraces.id, row.decisionTraceId), eq(decisionTraces.userId, userId)))
+          .limit(1);
+        if (trace.length === 0) {
+          throw new Error('decision_trace not found or does not belong to user');
+        }
+      }
       const [result] = await db.insert(insights).values(row).returning();
       if (!result) throw new Error('Insert into insights returned no row.');
       return result;
