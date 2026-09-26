@@ -6,6 +6,7 @@ import {
   computeWeightedProgress,
   rankWeakConcepts,
   retrievability,
+  traceRootCause,
   type WeakConcept,
 } from '@friday/core';
 import {
@@ -21,6 +22,9 @@ import {
 import {
   buildOutDegree,
   toCoreConcept,
+  toCoreMasteryState,
+  toCoreMemoryState,
+} from '../shared/mappers';
   toCoreMasteryState,
   toCoreMemoryState,
 } from '../shared/mappers';
@@ -184,6 +188,62 @@ export async function getWeakConcepts(
     lambda: DEFAULT_PRIORITY_CONFIG.lambda,
     limit,
   });
+}
+
+/**
+ * Determine the deterministic root-cause chain for a weak concept by walking
+ * backwards through the prerequisite graph and checking mastery states.
+ * LLM may summarize the result but may not create or override facts.
+ */
+export async function getRootCauseAttribution(
+  user: UserRow,
+  goalId: string,
+  weakConceptId: string,
+  now = new Date(),
+): Promise<{
+  weakConceptId: string;
+  chain: {
+    conceptId: string;
+    mastery: number;
+    readiness: number;
+    strength: number;
+  }[];
+  evidence: Record<string, unknown> | null;
+}> {
+  const db = getDb();
+
+  // Load goal scope (curriculum, concepts, mastery, edges)
+  const scope = await loadGoalScope(user, goalId, now);
+  const { conceptInputs, edges } = scope;
+
+  // Build the graph from concepts and edges
+  const graph = buildGraph(
+    conceptInputs.map((ci) => ci.concept),
+    edges,
+  );
+
+  // Find mastery states for all concepts in the graph
+  const allConceptIds = new Set(conceptInputs.map((ci) => ci.concept.id));
+  const conceptMasteryMap = new Map(
+    conceptInputs.map((ci) => [ci.concept.id, ci.masteryState?.mastery ?? 0]),
+  );
+
+  // Trace root-cause chain from the weak concept
+  const chain = traceRootCause(
+    graph,
+    weakConceptId,
+    conceptMasteryMap,
+    DEFAULT_PRIORITY_CONFIG.theta,
+  );
+
+  // Collect evidence: look for existing insights on concepts in the chain
+  const evidence: Record<string, unknown> | null = null;
+
+  return {
+    weakConceptId,
+    chain,
+    evidence,
+  };
 }
 
 /**

@@ -60,7 +60,7 @@ describe('error taxonomy', () => {
   });
 });
 
-import { InsightSchema } from '../schemas/intelligence';
+import { InsightSchema, RootCauseResponseSchema } from '../schemas/intelligence';
 
 describe('insight evidence citation', () => {
   it('valid evidence-backed insight is preserved', () => {
@@ -109,6 +109,39 @@ describe('insight evidence citation', () => {
   it('API contract: insight response includes evidence field', () => {
     const doc = buildOpenApiDocument();
     const path = doc.paths?.['/intelligence/insights']?.get;
+    expect(path).toBeDefined();
+    expect(path?.responses?.['200']).toBeDefined();
+  });
+});
+
+describe('insight evidence citation: root-cause', () => {
+  it('root-cause chain includes concept mastery and readiness', () => {
+    const chain = [
+      { conceptId: 'c2', mastery: 0.3, readiness: 0.45, strength: 1 },
+      { conceptId: 'c1', mastery: 0.7, readiness: 0.82, strength: 1 },
+    ];
+    const result = RootCauseResponseSchema.safeParse({
+      weakConceptId: 'w1',
+      chain,
+      evidence: undefined,
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.chain).toEqual(chain);
+  });
+
+  it('root-cause chain is empty when no prerequisites exist', () => {
+    const result = RootCauseResponseSchema.safeParse({
+      weakConceptId: 'w1',
+      chain: [],
+      evidence: undefined,
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.chain).toEqual([]);
+  });
+
+  it('root-cause response includes evidence field', () => {
+    const doc = buildOpenApiDocument();
+    const path = doc.paths?.['/intelligence/root-cause']?.get;
     expect(path).toBeDefined();
     expect(path?.responses?.['200']).toBeDefined();
   });

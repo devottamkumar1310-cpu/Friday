@@ -170,6 +170,66 @@ function findCycle(nodes: ConceptNode[], edges: ConceptEdge[]): ConceptEdge[] | 
  * Kahn's-algorithm topological order over `prerequisite_of` edges. Assumes an
  * acyclic edge set — callers run `breakCycles` first (I-6).
  */
+/**
+ * Trace the root-cause chain from a weak concept through its prerequisites.
+ * Walks backwards via `prerequisitesOf` and collects each prerequisite's
+ * mastery state and readiness contribution.
+ * Returns the chain from the weak concept (index 0) down to the most-root
+ * prerequisite (last index).
+ */
+export function traceRootCause(
+  graph: Graph,
+  conceptId: string,
+  masteryByConcept: Map<string, number>,
+  theta = 0.75,
+): {
+  conceptId: string;
+  title: string;
+  mastery: number;
+  readiness: number;
+  strength: number;
+}[] {
+  const chain: {
+    conceptId: string;
+    title: string;
+    mastery: number;
+    readiness: number;
+    strength: number;
+  }[] = [];
+  const visited = new Set<string>();
+
+  function walk(id: string): void {
+    if (visited.has(id)) return;
+    visited.add(id);
+
+    const prereqs = graph.prerequisitesOf.get(id) ?? [];
+    const mastery = masteryByConcept.get(id) ?? 0;
+
+    // Compute readiness based on prerequisites of this concept
+    const prereqData = prereqs.map((e) => ({
+      effectiveMastery: masteryByConcept.get(e.fromConceptId) ?? 0,
+      strength: e.strength ?? 1,
+    }));
+    const readiness = computeReadiness(prereqData, theta);
+
+    chain.push({
+      conceptId: id,
+      title: '',
+      mastery,
+      readiness,
+      strength: mastery > 0 ? 1 : 0,
+    });
+
+    // Continue walking backwards through prerequisites
+    for (const prereq of prereqs) {
+      walk(prereq.fromConceptId);
+    }
+  }
+
+  walk(conceptId);
+  return chain;
+}
+
 export function topologicalOrder(nodes: ConceptNode[], edges: ConceptEdge[]): string[] {
   const prereqEdges = edges.filter((e) => e.type === 'prerequisite_of');
   const inDegree = new Map<string, number>(nodes.map((n) => [n.id, 0]));

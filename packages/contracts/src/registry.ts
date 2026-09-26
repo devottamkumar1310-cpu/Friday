@@ -46,6 +46,7 @@ import { MissionControlResponseSchema } from './schemas/mission-control';
 import {
   InsightsResponseSchema,
   ProgressResponseSchema,
+  RootCauseResponseSchema,
   TrendsResponseSchema,
   WeakConceptsResponseSchema,
 } from './schemas/intelligence';
@@ -361,6 +362,15 @@ export const ENDPOINTS = {
     tags: ['Intelligence'],
     auth: true,
     response: InsightsResponseSchema,
+    status: 200,
+  },
+  getRootCause: {
+    method: 'GET',
+    path: '/intelligence/root-cause',
+    summary: 'Deterministic root-cause attribution chain for a weak concept via prerequisite graph',
+    tags: ['Intelligence'],
+    auth: true,
+    response: RootCauseResponseSchema,
     status: 200,
   },
 

@@ -93,3 +93,16 @@ export const InsightSchema = z
   .openapi('Insight');
 
 export const InsightsResponseSchema = envelope(z.array(InsightSchema));
+
+export const RootCauseResponseSchema = z.object({
+  weakConceptId: z.string(),
+  chain: z.array(
+    z.object({
+      conceptId: z.string(),
+      mastery: z.number(),
+      readiness: z.number(),
+      strength: z.number(),
+    }),
+  ),
+  evidence: z.union([z.null(), z.unknown()]).default(null),
+});
