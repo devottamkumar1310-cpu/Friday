@@ -5,13 +5,16 @@ import { z } from 'zod';
 
 const WeakConceptIdSchema = z.string().uuid();
 
-export default async function RootCausePage() {
+export default async function RootCausePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ goalId: string; weakConceptId: string }>;
+}) {
   const user = await requireUser();
 
-  // ✅ Next.js 15 App Router server component pattern
-  const params = new URLSearchParams();
-  const goalId = params.get('goalId') ?? undefined;
-  const weakConceptId = params.get('weakConceptId') ?? undefined;
+  const params = await searchParams;
+  const goalId = params.goalId ?? undefined;
+  const weakConceptId = params.weakConceptId ?? undefined;
 
   if (!goalId || !weakConceptId) {
     notFound();
