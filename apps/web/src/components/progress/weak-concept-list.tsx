@@ -14,6 +14,7 @@ export interface WeakConceptView {
   title: string;
   mastery: number;
   examWeight: number;
+  goalId: string;
   evidence: {
     evidenceCount: number;
     beliefConfidence: number;
@@ -22,7 +23,7 @@ export interface WeakConceptView {
   };
 }
 
-export function WeakConceptList({ concepts }: { concepts: WeakConceptView[] }) {
+export function WeakConceptList({ goalId, concepts }: { goalId: string; concepts: WeakConceptView[] }) {
   if (concepts.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
@@ -44,6 +45,14 @@ export function WeakConceptList({ concepts }: { concepts: WeakConceptView[] }) {
                   provisional
                 </Badge>
               ) : null}
+              <a
+                href={`/root-cause?goalId=${goalId}&weakConceptId=${concept.conceptId}`}
+                className="text-[10px] underline underline-offset-2 text-primary hover:text-primary-foreground ml-2"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Root cause
+              </a>
             </div>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {concept.evidence.evidenceCount}{' '}

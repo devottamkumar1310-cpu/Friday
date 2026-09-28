@@ -141,11 +141,13 @@ export default async function ProgressPage() {
           </CardHeader>
           <CardContent>
             <WeakConceptList
+              goalId={goal.id}
               concepts={weakConcepts.map((w) => ({
                 conceptId: w.conceptId,
                 title: w.title,
                 mastery: w.mastery,
                 examWeight: w.examWeight,
+                goalId: goal.id,
                 evidence: {
                   evidenceCount: w.evidence.evidenceCount,
                   beliefConfidence: w.evidence.beliefConfidence,
