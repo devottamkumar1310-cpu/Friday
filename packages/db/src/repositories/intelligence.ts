@@ -74,11 +74,38 @@ export function intelligenceRepository(db: Executor) {
     async listInsights(userId: string, goalId?: string): Promise<InsightRow[]> {
       const conditions = [eq(insights.userId, userId), eq(insights.isDismissed, false)];
       if (goalId) conditions.push(eq(insights.goalId, goalId));
-      return db
+      const rows = await db
         .select()
         .from(insights)
         .where(and(...conditions))
         .orderBy(desc(insights.createdAt));
+
+      // Validate decision-trace ownership per NFR-3.3 / P0 requirement
+      // Build a map of decisionTraceId -> userId for traces that exist
+      const traceMap: Map<string, string> = new Map();
+      for (const row of rows) {
+        if (row.decisionTraceId) {
+          const trace = await db
+            .select({ userId: decisionTraces.userId })
+            .from(decisionTraces)
+            .where(and(eq(decisionTraces.id, row.decisionTraceId)))
+            .limit(1);
+          if (trace.length > 0 && trace[0]?.userId !== undefined) {
+          traceMap.set(row.decisionTraceId, trace[0].userId);
+        }
+        }
+      }
+
+      // Validate ownership: if trace exists but belongs to another user, nullify evidence
+      return rows.map((row) => {
+        if (row.decisionTraceId && traceMap.has(row.decisionTraceId)) {
+          const owner = traceMap.get(row.decisionTraceId);
+          if (owner !== userId) {
+            return { ...row, evidence: null } as InsightRow;
+          }
+        }
+        return row;
+      });
     },
 
     async dismissInsight(userId: string, insightId: string): Promise<void> {

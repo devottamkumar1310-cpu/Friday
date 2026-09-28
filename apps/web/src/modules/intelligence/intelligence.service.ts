@@ -25,9 +25,6 @@ import {
   toCoreMasteryState,
   toCoreMemoryState,
 } from '../shared/mappers';
-  toCoreMasteryState,
-  toCoreMemoryState,
-} from '../shared/mappers';
 
 /**
  * Intelligence service — roadmap 2.1 (progress, weighted completion, on-track
