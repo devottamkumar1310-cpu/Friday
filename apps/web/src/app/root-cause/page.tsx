@@ -8,6 +8,7 @@ const WeakConceptIdSchema = z.string().uuid();
 export default async function RootCausePage() {
   const user = await requireUser();
 
+  // ✅ Next.js 15 App Router server component pattern
   const params = new URLSearchParams();
   const goalId = params.get('goalId') ?? undefined;
   const weakConceptId = params.get('weakConceptId') ?? undefined;
