@@ -45,9 +45,14 @@ export async function startSession(
   const existing = await executionRepository(db).findActiveSession(user.id);
   if (existing) throw new ApiError(ERROR_CODES.SESSION_ALREADY_ACTIVE); // E-19
 
+  let plannedMinutes: number | null = null;
   if (input.taskId) {
     const task = await planningRepository(db).findTask(user.id, input.taskId);
     if (!task) throw ApiError.notFound();
+    // Write the task's budget so we can measure planned-vs-actual adherence
+    // (reliability = actual / planned). Without this field the ratio is
+    // uncomputable and the learner model stays fixed at 1.0 forever.
+    plannedMinutes = task.estimatedMinutes;
   }
 
   const session = await executionRepository(db).createSession({
@@ -56,6 +61,7 @@ export async function startSession(
     taskId: input.taskId ?? null,
     status: 'active',
     originatedFrom: input.originatedFrom,
+    plannedMinutes,
   });
 
   // Paired with `session.completed`: the ratio between them is how many
