@@ -1,6 +1,7 @@
 import { ApiError } from '@friday/contracts';
 import {
   DEFAULT_PRIORITY_CONFIG,
+  buildGraph,
   computeRetentionHealth,
   computeVelocity,
   computeWeightedProgress,
@@ -22,6 +23,7 @@ import {
 import {
   buildOutDegree,
   toCoreConcept,
+  toCoreEdge,
   toCoreMasteryState,
   toCoreMemoryState,
 } from '../shared/mappers';
@@ -45,6 +47,7 @@ interface GoalScope {
   memoryStates: { retrievability: number; dueAt: Date; reps: number }[];
   plan: Awaited<ReturnType<ReturnType<typeof planningRepository>['findActive']>>;
   goal: NonNullable<Awaited<ReturnType<ReturnType<typeof goalsRepository>['findById']>>>;
+  edges: Awaited<ReturnType<ReturnType<typeof curriculumRepository>['listEdges']>>;
 }
 
 async function loadGoalScope(user: UserRow, goalId: string, now: Date): Promise<GoalScope> {
@@ -88,6 +91,7 @@ async function loadGoalScope(user: UserRow, goalId: string, now: Date): Promise<
     })),
     plan: await planningRepository(db).findActive(user.id, goalId),
     goal,
+    edges,
   };
 }
 
@@ -207,8 +211,6 @@ export async function getRootCauseAttribution(
   }[];
   evidence: Record<string, unknown> | null;
 }> {
-  const db = getDb();
-
   // Load goal scope (curriculum, concepts, mastery, edges)
   const scope = await loadGoalScope(user, goalId, now);
   const { conceptInputs, edges } = scope;
@@ -216,11 +218,10 @@ export async function getRootCauseAttribution(
   // Build the graph from concepts and edges
   const graph = buildGraph(
     conceptInputs.map((ci) => ci.concept),
-    edges,
+    edges.map(toCoreEdge),
   );
 
   // Find mastery states for all concepts in the graph
-  const allConceptIds = new Set(conceptInputs.map((ci) => ci.concept.id));
   const conceptMasteryMap = new Map(
     conceptInputs.map((ci) => [ci.concept.id, ci.masteryState?.mastery ?? 0]),
   );
