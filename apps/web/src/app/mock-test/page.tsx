@@ -1,103 +1,31 @@
 import { notFound } from 'next/navigation';
 import { requireUser } from '@/lib/auth/server';
-import { z } from 'zod';
-import '@/modules/assessment/assessment.service';
-import { createPracticeSet } from '@/modules/assessment/assessment.service';
+import { listGoals, getGraph } from '@/modules/curriculum/curriculum.service';
+import { MockTestStarter } from './mock-test-starter';
 
-const GoalIdSchema = z.string().uuid();
-
-export default async function MockTestPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ goalId?: string }>;
-}) {
+export default async function MockTestPage() {
   const user = await requireUser();
-  const params = await searchParams;
-  const goalId = params.goalId;
-
-  if (!goalId) {
+  const goals = await listGoals(user);
+  const goal = goals.find((g) => g.status === 'active') ?? goals[0];
+  
+  if (!goal) {
     notFound();
     return;
   }
 
-  const goalIdValid = GoalIdSchema.safeParse(goalId);
-  if (!goalIdValid.success) {
-    notFound();
-    return;
-  }
-
-  let practiceSetResult: any;
-  let practiceSetError: string | null = null;
-
-  try {
-    practiceSetResult = await createPracticeSet(
-      user,
-      { goalId: goalIdValid.data, conceptIds: [], questionCount: 2 }
-    );
-  } catch (e: any) {
-    practiceSetError = e.message || 'Unknown error';
-    practiceSetResult = null;
-  }
-
-  if (practiceSetError || !practiceSetResult?.questions?.length) {
-    return (
-      <main className="mx-auto max-w-2xl px-6 py-12">
-        <div className="mb-8">
-          <p className="text-sm font-medium text-primary">Practice Set</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-            Practice Set
-          </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Assessment engine ready. Concept selection pending – practice set ready
-            upon backend integration. No fake questions displayed.
-          </p>
-        </div>
-      </main>
-    );
-  }
-
-  const { assessmentId, questions } = practiceSetResult;
+  const { concepts } = await getGraph(user, goal.id);
+  const conceptIds = concepts.map(c => c.id);
 
   return (
-    <main className="mx-auto max-w-2xl px-6 py-12">
-      <div className="mb-8">
-        <p className="text-sm font-medium text-primary">Practice Set</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-          Practice Set {assessmentId?.slice(0, 8) || ''}
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {questions.length} questions
+    <main className="mx-auto max-w-2xl px-6 py-12 space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Mock Test</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Take a full-length mock exam to evaluate your overall readiness.
         </p>
       </div>
 
-      <div className="mt-8">
-        <p className="text-lg font-medium">Questions</p>
-        {questions.map((question: any, idx: number) => (
-          <div key={idx} className="p-3 rounded border border-border space-y-2">
-            <p className="font-medium">{question.stem}</p>
-            {question.options?.map((opt: any) => (
-              <div key={opt.id} className="radio-group">
-                <input
-                  type="radio"
-                  name={`answer-${question.id}`}
-                  className="radio-input"
-                  value={opt.id}
-                />
-                <label className="radio-label">{opt.text}</label>
-              </div>
-            ))}
-          </div>
-        ))}
-
-        <div>
-          <button className="btn-primary mt-4" disabled>
-            Submit Answers
-          </button>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Assessment in progress – answers collected for submission
-          </p>
-        </div>
-      </div>
+      <MockTestStarter goalId={goal.id} conceptIds={conceptIds} />
     </main>
   );
 }
