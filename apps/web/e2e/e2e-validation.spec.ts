@@ -46,7 +46,7 @@ test('Completes the final validation flow', async () => {
   await expect(page).toHaveURL(/\/study\/.+/);
   
   // The study page has its own start button
-  const studyStartBtn = page.getByRole('button', { name: 'Start', exact: true });
+  const studyStartBtn = page.getByRole('button', { name: /Start studying/i });
   await expect(studyStartBtn).toBeVisible({ timeout: 15000 });
   await studyStartBtn.click();
 
