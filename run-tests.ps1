@@ -1,0 +1,1 @@
+& "C:\Users\Devottam\OneDrive\Pictures\Desktop\Project\Friday\packages\core\node_modules\.bin\vitest" run --reporter=verbose 2>&1
