@@ -175,7 +175,11 @@ export function PracticeRunner({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground" aria-live="polite">
-          Question {index + 1} of {questions.length} · {correctCount} correct so far
+          {/* "Question 1 of 1" announces a set that is over before it starts.
+              A single question is a quick check, and saying so is honest. */}
+          {questions.length === 1
+            ? 'Quick check'
+            : `Question ${index + 1} of ${questions.length} · ${correctCount} correct so far`}
         </p>
         {!servedFromCache && <Badge variant="ai">newly generated</Badge>}
       </div>
@@ -303,7 +307,22 @@ export function PracticeRunner({
               </Button>
             )}
 
-            <Button variant="ghost" size="sm" onClick={report}>
+            {/*
+              Skip. A set with no way past a question the learner cannot answer
+              is a dead end, and the honest options are "I do not know this" and
+              "this question is broken" — not "answer or leave".
+
+              It advances without submitting, so nothing is recorded as wrong:
+              a skipped question is absence of evidence, not evidence of
+              absence, and grading it would poison the mastery signal.
+            */}
+            {!graded ? (
+              <Button variant="ghost" onClick={next} disabled={busy}>
+                {isLast ? 'Skip and finish' : 'Skip'}
+              </Button>
+            ) : null}
+
+            <Button variant="ghost" size="sm" onClick={report} className="ml-auto">
               <Flag className="size-4" aria-hidden /> Report a problem
             </Button>
           </div>

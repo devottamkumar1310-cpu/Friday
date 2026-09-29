@@ -1,11 +1,13 @@
 import { StartSessionRequestSchema } from '@friday/contracts';
 import { authedRoute } from '@/lib/api/handler';
 import { listSessions, startSession } from '@/modules/execution/execution.service';
+import { RATE_LIMITS } from '@/lib/api/rate-limit';
 
 export const runtime = 'nodejs';
 
 export const POST = authedRoute({
   body: StartSessionRequestSchema,
+  rateLimit: RATE_LIMITS.session,
   handler: async ({ user, body }) => {
     const session = await startSession(user, body);
     return {

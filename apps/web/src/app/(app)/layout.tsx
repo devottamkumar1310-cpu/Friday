@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { MainNav } from '@/components/app/main-nav';
 import { SignOutButton } from '@/components/app/sign-out-button';
+import { ThemeToggle } from '@/components/app/theme-toggle';
 import { requireUser } from '@/lib/auth/server';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -14,7 +15,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <div className="flex min-w-0 items-center gap-6">
             <Link
               href="/dashboard"
-              className="shrink-0 rounded-md text-sm font-semibold tracking-tight focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              className="flex min-h-11 shrink-0 items-center rounded-md text-sm font-semibold tracking-tight focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             >
               FRIDAY
             </Link>
@@ -25,6 +26,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <span className="hidden max-w-32 truncate text-sm text-muted-foreground md:inline">
               {user.displayName}
             </span>
+            <ThemeToggle />
             <SignOutButton />
           </div>
         </div>

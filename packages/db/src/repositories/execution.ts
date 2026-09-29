@@ -37,6 +37,32 @@ export function executionRepository(db: Executor) {
       return row;
     },
 
+    /**
+     * Reads a session and holds a row lock until the enclosing transaction ends.
+     *
+     * `findSession` is an ordinary SELECT, so two concurrent completions of the
+     * same session both read `status = 'active'`, both passed the guard, and
+     * both committed — measured: two evidence events and two mastery updates
+     * from one sitting. The guard was never wrong, it was just not atomic; a
+     * double-tapped Finish button was enough to inflate the learner's mastery.
+     *
+     * `FOR UPDATE` makes the loser block until the winner commits, at which
+     * point it re-reads `status = 'completed'` and the existing guard rejects it
+     * correctly. Must be called inside a transaction to mean anything.
+     */
+    async findSessionForUpdate(
+      userId: string,
+      sessionId: string,
+    ): Promise<StudySessionRow | undefined> {
+      const [row] = await db
+        .select()
+        .from(studySessions)
+        .where(and(eq(studySessions.id, sessionId), eq(studySessions.userId, userId)))
+        .limit(1)
+        .for('update');
+      return row;
+    },
+
     async completeSession(
       userId: string,
       sessionId: string,

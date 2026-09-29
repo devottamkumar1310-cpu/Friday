@@ -16,14 +16,21 @@ const here = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(here, '../../../.env.local') });
 config({ path: resolve(here, '../../../.env') });
 
-const connectionString = process.env['DATABASE_URL'];
-if (!connectionString) {
+const rawConnectionString = process.env['DATABASE_URL'];
+if (!rawConnectionString) {
   console.error(
     'DATABASE_URL is not set.\n' +
       'Copy .env.example to .env.local and provide a Postgres 16+ connection string.',
   );
   process.exit(1);
 }
+
+// For migrations / DDL, use DIRECT_DATABASE_URL or strip Neon's -pooler suffix
+const connectionString =
+  process.env['DIRECT_DATABASE_URL'] ??
+  (rawConnectionString.includes('-pooler.')
+    ? rawConnectionString.replace('-pooler.', '.')
+    : rawConnectionString);
 
 const pool = new pg.Pool({
   connectionString,

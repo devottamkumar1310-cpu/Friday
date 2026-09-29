@@ -1,0 +1,25 @@
+-- Migration 0006: insights table with evidence citation and decision trace support.
+--
+-- Uses CREATE TABLE IF NOT EXISTS so this migration is safe to apply against
+-- databases that already have an insights table from an earlier schema version.
+-- For those databases, migration 0007 adds the decision_trace_id column via
+-- ALTER TABLE ADD COLUMN IF NOT EXISTS.
+--
+-- For fresh databases: this creates the full table including decision_trace_id,
+-- and 0007 is a safe no-op.
+
+CREATE TABLE IF NOT EXISTS "insights" (
+    "id" uuid NOT NULL PRIMARY KEY,
+    "user_id" uuid NOT NULL,
+    "goal_id" uuid NOT NULL,
+    "type" text NOT NULL,
+    "title" text NOT NULL,
+    "body" text NOT NULL,
+    "severity" integer NOT NULL DEFAULT 2,
+    "concept_ids" uuid[] DEFAULT '{}'::uuid[],
+    "evidence" jsonb NOT NULL DEFAULT '{}',
+    "decision_trace_id" uuid REFERENCES "decision_traces"("id") ON DELETE SET NULL,
+    "is_dismissed" boolean NOT NULL DEFAULT false,
+    "valid_until" timestamp with time zone,
+    "created_at" timestamp with time zone NOT NULL DEFAULT now()
+);

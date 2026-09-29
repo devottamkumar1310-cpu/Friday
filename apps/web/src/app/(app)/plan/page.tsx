@@ -14,9 +14,11 @@ import {
   EmptyState,
 } from '@friday/ui';
 import { requireOnboardedUser } from '@/lib/auth/server';
+import { getAdaptiveProfile } from '@/modules/adaptive/adaptive.service';
 import { listGoals } from '@/modules/curriculum/curriculum.service';
 import { getSchedule, hydrateTasksWithConcepts } from '@/modules/planning/planning.service';
 import { RegeneratePlanButton } from '@/components/planning/regenerate-plan-button';
+
 
 export const metadata: Metadata = { title: 'Plan' };
 
@@ -42,12 +44,20 @@ export default async function PlanPage() {
   const goal = goals.find((g) => g.status === 'active') ?? goals[0];
   if (!goal) redirect('/onboarding/availability');
 
+  // Load adaptive profile in parallel with the schedule so it costs no extra
+  // serial latency. The profile is derived from session history — no extra
+  // query touches the schedule tables.
   let plan;
   let tasks;
+  let profile;
   try {
-    const schedule = await getSchedule(user, goal.id);
-    plan = schedule.plan;
-    tasks = await hydrateTasksWithConcepts(user.id, schedule.tasks);
+    const [scheduleResult, profileResult] = await Promise.all([
+      getSchedule(user, goal.id),
+      getAdaptiveProfile(user),
+    ]);
+    plan = scheduleResult.plan;
+    tasks = await hydrateTasksWithConcepts(user.id, scheduleResult.tasks);
+    profile = profileResult;
   } catch {
     return (
       <div className="space-y-6">
@@ -79,6 +89,13 @@ export default async function PlanPage() {
     plannedMinutes: number;
   }[];
 
+  // What the last re-plan did. Only shown when the plan row records it.
+  const diffSummary = plan.diffSummary as {
+    rescheduledCount?: number;
+    capacityBefore?: number;
+    capacityAfter?: number;
+  } | null;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -90,6 +107,31 @@ export default async function PlanPage() {
         </div>
         <RegeneratePlanButton goalId={goal.id} />
       </div>
+
+      {/* Adaptive context — the same intelligence the dashboard leads with,
+          here as a brief statement before the list. Omitted when the engine
+          has not yet formed a view (band === 'unknown'). */}
+      {profile.band !== 'unknown' && (
+        <Callout tone="info" title="How FRIDAY sized this plan">
+          {profile.band === 'struggling'
+            ? `Adjusting to keep you moving. Sessions are currently sized to ${profile.targetSessionMinutes} minutes to build momentum.`
+            : profile.band === 'thriving'
+              ? `Pushing you harder. Sessions are currently sized to ${profile.targetSessionMinutes} minutes because you have room.`
+              : `Holding your plan steady. Sessions are currently sized to ${profile.targetSessionMinutes} minutes based on your pace.`}
+        </Callout>
+      )}
+
+      {/* What the last re-plan redistributed, if anything was moved. */}
+      {diffSummary?.rescheduledCount != null && diffSummary.rescheduledCount > 0 && (
+        <Callout tone="info" title="What changed in this version">
+          {diffSummary.rescheduledCount} task
+          {diffSummary.rescheduledCount === 1 ? '' : 's'} rescheduled
+          {diffSummary.capacityBefore != null && diffSummary.capacityAfter != null
+            ? ` · available time moved from ${diffSummary.capacityBefore}h to ${diffSummary.capacityAfter}h`
+            : ''}
+          .
+        </Callout>
+      )}
 
       {/* §4.3: a plan version materialises 14 days and projects the rest. Saying
           so plainly prevents the reasonable assumption that the rest is missing. */}
@@ -159,7 +201,9 @@ export default async function PlanPage() {
                               {task.estimatedMinutes} min
                             </span>
                             {task.status === 'pending' ? (
-                              <Button size="sm" variant="secondary" asChild>
+                              // 44px minimum: `size="sm"` rendered these at 32px,
+                              // and there are ten of them stacked on a phone.
+                              <Button size="sm" variant="secondary" asChild className="h-11 px-4">
                                 <Link href={`/study/${task.id}`}>Study</Link>
                               </Button>
                             ) : null}

@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@friday/ui';
 import { requireOnboardedUser } from '@/lib/auth/server';
 import { listGoals } from '@/modules/curriculum/curriculum.service';
 import { getWeakConcepts } from '@/modules/intelligence/intelligence.service';
@@ -23,31 +22,24 @@ export default async function PracticePage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Practice</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Answering questions tells FRIDAY far more than rating yourself does — it is the strongest
-          evidence the engine accepts.
+          Answering questions teaches FRIDAY more than rating yourself does.
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Pick what to practise</CardTitle>
-          <CardDescription>
-            Ranked by what it costs to leave weak — exam weight, how far off you are, and how much
-            else depends on it.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <PracticeStarter
-            goalId={goal.id}
-            concepts={weak.map((w) => ({
-              id: w.conceptId,
-              title: w.title,
-              mastery: w.mastery,
-              provisional: w.evidence.provisional,
-            }))}
-          />
-        </CardContent>
-      </Card>
+      {/*
+        The card chrome moved inside `PracticeStarter`, which drops it once a
+        set is running. A page header, a paragraph, a card header and a second
+        paragraph all used to stay on screen while the learner was mid-question.
+      */}
+      <PracticeStarter
+        goalId={goal.id}
+        concepts={weak.map((w) => ({
+          id: w.conceptId,
+          title: w.title,
+          mastery: w.mastery,
+          provisional: w.evidence.provisional,
+        }))}
+      />
     </div>
   );
 }

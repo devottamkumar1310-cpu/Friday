@@ -29,6 +29,7 @@ import { logger } from '@friday/observability';
 export const EVENTS = {
   signedUp: 'user.signed_up',
   availabilitySet: 'onboarding.availability_set',
+  goalUpdated: 'goal.updated',
   goalCreated: 'goal.created',
   sessionStarted: 'session.started',
   sessionCompleted: 'session.completed',

@@ -129,3 +129,29 @@ Redeploy the previous build. Migrations are forward-only and additive: every one
 ## 9. Backups
 
 **Not configured by this repo, and required before real learners.** `mastery_states` and `memory_states` are the irreplaceable data: a learner's evidence history cannot be reconstructed. Point-in-time recovery on the database host, verified by an actual restore. An untested backup is a hypothesis.
+
+---
+
+## 10. Beta limitations
+
+Known and deliberate. Documented here so nothing in the product implies otherwise.
+
+### A goal is write-once
+
+`POST /api/v1/goals` creates one; `GET /api/v1/goals/{id}` reads it. There is **no `PATCH`, `PUT`, or `DELETE`**. A learner therefore cannot change:
+
+- the exam date
+- the target exam or score
+- the subjects or their priorities
+
+Availability **can** be changed (`PUT /api/v1/me/availability`), and doing so now re-plans — see §10.1 constraint triggers.
+
+This matters for real learners: exam boards move dates, and students switch between Mains and Advanced. The workaround for beta is to create a second goal; the first stays and is not archived, because archiving is also not implemented.
+
+Adding goal editing is a feature, not a defect fix, and is deliberately out of scope for the beta. **Do not describe goals as editable in any onboarding copy, marketing, or support reply.**
+
+### The only adaptive dial is session length
+
+FRIDAY adjusts **how long a session should be**, and the Next Action is ranked and fitted against that budget. It does **not** adjust workload scaling, task difficulty, task ordering, or the amount of on-screen guidance — those dials were removed after an audit found the product announcing changes it never made.
+
+Anything that tells a learner their plan changed must trace to `targetSessionMinutes`. `packages/core/src/adaptive/__tests__/adaptive-truth.test.ts` fails the build if a claim outside that appears in learner-facing output.

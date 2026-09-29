@@ -150,10 +150,11 @@ test.describe('the study screen on a phone', () => {
     await page.getByRole('link', { name: 'Start this now' }).click();
     await page.getByRole('button', { name: 'Start studying' }).click();
     await expect(page.getByRole('timer')).toBeVisible();
+    await page.getByRole('button', { name: /done studying/i }).click();
 
     // WCAG 2.2 AA (2.5.8) sets the floor at 24×24 CSS px. These are the
-    // controls a learner uses mid-session, one-handed.
-    const ratings = page.getByRole('button', { name: 'Good' });
+    // controls a learner uses at the end of a session, one-handed.
+    const ratings = page.getByRole('button', { name: /^Yes/ });
     // `count()` does not auto-wait, so it has to follow an assertion that does —
     // otherwise it races the concept list's first render and reports zero.
     await expect(ratings.first()).toBeVisible();
@@ -171,7 +172,9 @@ test.describe('the study screen on a phone', () => {
     const timerBox = await page.getByRole('timer').boundingBox();
     expect(timerBox!.y).toBeLessThan(844);
 
-    await page.getByRole('button', { name: 'Abandon' }).click();
+    await page.getByRole('button', { name: /Back to studying/i }).click();
+    await page.getByRole('button', { name: 'Discard' }).click();
+    await page.getByRole('button', { name: 'Discard', exact: true }).last().click();
     await expect(page).toHaveURL(/\/dashboard/);
   });
 });
@@ -183,11 +186,20 @@ test.describe('onboarding on a phone', () => {
     await fresh.goto('/settings');
     await fresh.getByRole('link', { name: /Edit schedule/i }).click();
 
-    // Three selects and a remove button share one row; at 320px they must wrap
-    // rather than squeeze into unusable slivers.
+    // The presets carry the common path, so they have to be comfortable
+    // one-thumb targets before anything else is judged.
+    const preset = fresh.getByRole('button', { name: /Evenings after school/ });
+    const presetBox = await preset.boundingBox();
+    expect(presetBox!.height).toBeGreaterThanOrEqual(44);
+
+    await fresh.getByRole('button', { name: 'Set my own times' }).click();
+
+    // Each row stacks now — day on its own line, then From/To side by side —
+    // so every control keeps a usable width even at 320px.
     const day = fresh.getByLabel('Day', { exact: true }).first();
     const box = await day.boundingBox();
     expect(box!.width).toBeGreaterThanOrEqual(80);
+    expect(box!.height).toBeGreaterThanOrEqual(44);
     expect(await horizontalOverflow(fresh)).toBeLessThanOrEqual(0);
     await fresh.close();
   });

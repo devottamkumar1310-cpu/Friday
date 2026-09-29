@@ -15,6 +15,7 @@ import {
   planningRepository,
   type UserRow,
 } from '@friday/db';
+import { profileFromSessionRows, SESSION_HISTORY_LIMIT } from '../adaptive/adaptive.service';
 import { toCoreMasteryState, toCoreMemoryState } from '../shared/mappers';
 
 /**
@@ -122,7 +123,11 @@ export async function buildLearnerContext(
       )
     : [];
 
-  const sessions = await executionRepository(db).recentSessions(user.id, 5);
+  // One read serves two purposes: the five-session "recent activity" summary,
+  // and the adaptive profile, which needs a fortnight of history. Querying the
+  // same table twice for the same learner in the same request would also risk
+  // the two sections disagreeing about what happened.
+  const sessions = await executionRepository(db).recentSessions(user.id, SESSION_HISTORY_LIMIT);
   const facts = await learnerFactsRepository(db).list(user.id);
 
   const daysRemaining = Math.max(
@@ -157,13 +162,17 @@ export async function buildLearnerContext(
         : null,
       mastery: { strongest, weakest, dueForReview },
       recent: {
-        last5Sessions: sessions.map((s) => ({
+        last5Sessions: sessions.slice(0, 5).map((s) => ({
           date: s.startedAt.toISOString().slice(0, 10),
           minutes: s.activeMinutes,
           rating: s.selfRating,
         })),
         last3Assessments: [],
       },
+      // The same profile the learner is looking at in the Intelligence panel.
+      // Sharing one source is what stops the Coach explaining a decision the
+      // screen never made.
+      adaptive: profileFromSessionRows(sessions, user.timezone, now),
       facts: facts.map((f) => ({
         id: f.id,
         category: f.category,

@@ -48,6 +48,12 @@ export const RiskSchema = z
 export const MissionControlResponseSchema = envelope(
   z.object({
     goalId: UuidSchema,
+    /**
+     * What the last committed re-plan actually did, when it retired missed
+     * work. Null otherwise — there is no "nothing changed" wording, because a
+     * reassurance nobody asked for reads as one the system needed to give.
+     */
+    planChange: z.object({ statement: z.string(), evidence: z.string() }).nullable(),
     today: TodaysMissionSchema,
     nextAction: NextActionDataSchema,
     progress: ProgressSummarySchema,

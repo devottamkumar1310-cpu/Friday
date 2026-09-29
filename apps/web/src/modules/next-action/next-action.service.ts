@@ -49,11 +49,16 @@ async function buildCandidates(userId: string, goalId: string, now: Date): Promi
   );
   const conceptIds = [...new Set(conceptIdByTaskId.values())];
 
-  const concepts = await curriculumRepository(db).findConceptsByIds(userId, conceptIds);
+  // All three read the same concept ids and none needs the others' results.
+  // Serialised, they were three round trips on the most latency-sensitive
+  // computation in the product (NFR-1.7).
+  const [concepts, masteryStates, memoryStates] = await Promise.all([
+    curriculumRepository(db).findConceptsByIds(userId, conceptIds),
+    memoryRepository(db).listMasteryStates(userId, conceptIds),
+    memoryRepository(db).listMemoryStates(userId, conceptIds),
+  ]);
   const conceptById = new Map(concepts.map((c) => [c.id, c]));
-  const masteryStates = await memoryRepository(db).listMasteryStates(userId, conceptIds);
   const masteryByConceptId = new Map(masteryStates.map((m) => [m.conceptId, m]));
-  const memoryStates = await memoryRepository(db).listMemoryStates(userId, conceptIds);
   const memoryByConceptId = new Map(memoryStates.map((m) => [m.conceptId, m]));
 
   const candidates: Candidate[] = [];
@@ -117,18 +122,33 @@ export async function getNextAction(
   goalId: string,
   availableMinutes: number,
 ): Promise<NextActionResponse['data']> {
-  const goal = await goalsRepository(getDb()).findById(user.id, goalId);
-  if (!goal) throw ApiError.notFound();
-
   const now = new Date();
-  const candidates = await buildCandidates(user.id, goalId, now);
+
+  /**
+   * Three independent reads, issued together.
+   *
+   * The goal lookup, the candidate build and the previous decision trace were
+   * awaited in sequence, which cost three serial round trips before any
+   * scoring began — on the one computation NFR-1.7 singles out as load-bearing.
+   *
+   * Fetching the trace before knowing whether there are candidates does one
+   * extra read on the empty-plan path. That path returns immediately and is
+   * rare; paying for it there to save a round trip on every real request is the
+   * right side of the trade.
+   */
+  const [goal, candidates, recentTraces] = await Promise.all([
+    goalsRepository(getDb()).findById(user.id, goalId),
+    buildCandidates(user.id, goalId, now),
+    tracesRepository(getDb()).listRecent(user.id, 'next_action', 1),
+  ]);
+  if (!goal) throw ApiError.notFound();
 
   const computedAt = now.toISOString();
   if (candidates.length === 0) {
     return { action: null, why: null, alternates: [], computedAt, cacheHit: false };
   }
 
-  const lastTrace = (await tracesRepository(getDb()).listRecent(user.id, 'next_action', 1))[0];
+  const lastTrace = recentTraces[0];
   const currentRecommendationConceptId = lastTrace?.selectedEntityId
     ? (candidates.find((c) => c.task.id === lastTrace.selectedEntityId)?.conceptId ?? null)
     : null;

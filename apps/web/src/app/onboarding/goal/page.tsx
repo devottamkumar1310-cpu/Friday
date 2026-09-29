@@ -4,7 +4,7 @@ import { GoalForm } from '@/components/onboarding/goal-form';
 import { requireUser } from '@/lib/auth/server';
 import { getMePayload } from '@/modules/identity/identity.service';
 import { listGoals, listTemplates } from '@/modules/curriculum/curriculum.service';
-import { getAvailability } from '@/modules/identity/settings.service';
+import { getAvailability, weeklyMinutes } from '@/modules/identity/settings.service';
 
 export const metadata: Metadata = { title: 'Set your goal' };
 
@@ -40,6 +40,10 @@ export default async function GoalPage() {
       </div>
 
       <GoalForm
+        // Single source of truth. The form used to ask for weekly hours again
+        // and default to "10 hours a week", which silently contradicted the
+        // availability the learner had just set on the previous screen.
+        weeklyMinutes={weeklyMinutes(availability.rules)}
         templates={templates.map((t) => ({
           id: t.id,
           slug: t.slug,

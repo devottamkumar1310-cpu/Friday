@@ -20,10 +20,25 @@ const buttonVariants = cva(
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {
-        sm: 'h-8 px-3 text-xs',
-        md: 'h-10 px-4',
-        lg: 'h-12 px-6 text-base',
-        icon: 'size-10',
+        // `min-h`/`min-w` rather than a fixed height: a button whose label
+        // wraps on a narrow screen must grow rather than clip its own text.
+        // No desktop shrink. 768px and 1024px are tablet widths reached by
+        // thumb, and a rule that relaxes above `sm` puts every small button
+        // back under the floor on exactly the devices that need it most.
+        sm: 'min-h-11 px-3 text-xs',
+        md: 'min-h-11 px-4',
+        lg: 'min-h-12 px-6 text-base',
+        /**
+         * 44px, not 40.
+         *
+         * The audit matrix found every icon button in the product below the
+         * tap-target floor at every breakpoint — the mobile navigation
+         * disclosure among them, which is the single most important control on
+         * a phone. WCAG 2.5.8 sets 24px as the minimum and 44px is the iOS
+         * guideline; an icon button is exactly the case the guideline exists
+         * for, because there is no text around it to absorb a near-miss.
+         */
+        icon: 'size-11',
       },
     },
     defaultVariants: { variant: 'primary', size: 'md' },

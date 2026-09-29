@@ -40,7 +40,26 @@ export const ConceptRatingSchema = z.object({
 export const CompleteSessionRequestSchema = z
   .object({
     activeMinutes: z.number().int().min(0).max(1440),
-    ratings: z.array(ConceptRatingSchema).min(1),
+    /**
+     * One rating per concept, enforced.
+     *
+     * An audit sent fifty ratings for the same concept in a single completion
+     * and watched mastery go from 9.8% to 68.8% — fifty evidence events from one
+     * sitting. Everything downstream is computed from that number: what the
+     * planner schedules, what the learner is told they know, whether the goal
+     * looks feasible.
+     *
+     * Rejected rather than de-duplicated. Two ratings for one concept in one
+     * session is not a request with a sensible reading — silently keeping the
+     * first or the last would guess at which one the client meant, and a
+     * double-submitting client would never find out it was broken.
+     */
+    ratings: z
+      .array(ConceptRatingSchema)
+      .min(1)
+      .refine((rows) => new Set(rows.map((r) => r.conceptId)).size === rows.length, {
+        message: 'Each concept may be rated once per session.',
+      }),
     notes: z.string().max(2000).optional(),
   })
   .strict()

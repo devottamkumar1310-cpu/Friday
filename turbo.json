@@ -2,7 +2,19 @@
   "$schema": "https://turbo.build/schema.json",
   "ui": "stream",
   "globalDependencies": ["**/.env.*local", "tsconfig.base.json"],
-  "globalEnv": ["NODE_ENV"],
+  "globalEnv": [
+    "NODE_ENV",
+    "DATABASE_URL",
+    "DIRECT_DATABASE_URL",
+    "AUTH_SECRET",
+    "APP_URL",
+    "AI_PROVIDER",
+    "GOOGLE_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "SENTRY_DSN",
+    "NEXT_PUBLIC_SENTRY_DSN",
+    "DATABASE_POOL_MAX"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

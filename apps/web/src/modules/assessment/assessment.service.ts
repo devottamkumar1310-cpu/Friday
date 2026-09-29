@@ -154,6 +154,86 @@ export async function createPracticeSet(
   };
 }
 
+export async function createMockTest(
+  user: UserRow,
+  input: { goalId: string; questionCount?: number; difficulty?: number },
+): Promise<PracticeSetResult> {
+  const db = getDb();
+
+  const goal = await goalsRepository(db).findById(user.id, input.goalId);
+  if (!goal) throw ApiError.notFound();
+
+  const curriculum = await curriculumRepository(db).findByGoal(user.id, goal.id);
+  if (!curriculum) throw ApiError.notFound();
+
+  const concepts = await curriculumRepository(db).listConcepts(user.id, curriculum.id);
+  if (concepts.length === 0) throw new ApiError(ERROR_CODES.VALIDATION_FAILED, 'No such concepts.');
+
+  const wanted = input.questionCount ?? 15;
+  const difficulty = input.difficulty ?? 4;
+  const perConcept = Math.max(1, Math.ceil(wanted / concepts.length));
+
+  const bank = questionBankRepository(db);
+  const selected: QuestionRow[] = [];
+  let generatedAny = false;
+
+  for (const concept of concepts) {
+    if (!concept.conceptKey) continue;
+    const cached = await bank.findUnseenForConcept(user.id, concept.conceptKey, difficulty, perConcept);
+    selected.push(...cached);
+
+    const shortfall = perConcept - cached.length;
+    if (shortfall <= 0) continue;
+
+    const generated = await generateAndStore(user, concept.conceptKey, concept.title, difficulty, shortfall);
+    generatedAny = generatedAny || generated.length > 0;
+    selected.push(...generated);
+  }
+
+  // Shuffle and trim
+  const shuffled = selected.sort(() => 0.5 - Math.random());
+  const trimmed = shuffled.slice(0, wanted);
+
+  if (trimmed.length === 0) {
+    throw new ApiError(ERROR_CODES.NO_QUESTIONS_AVAILABLE, 'No questions are available for these concepts yet.');
+  }
+
+  const assessment = await assessmentRepository(db).create({
+    userId: user.id,
+    goalId: input.goalId,
+    type: 'mock_test',
+    title: `Full Mock Test (${trimmed.length} Qs)`,
+    conceptIds: concepts.map((c) => c.id),
+  });
+
+  const attempt = await assessmentRepository(db).createAttempt({
+    assessmentId: assessment.id,
+    userId: user.id,
+    maxScore: trimmed.length.toFixed(2),
+  });
+
+  await bank.recordExposures(
+    user.id,
+    trimmed.map((q) => q.id),
+  );
+  await bank.recordServed(
+    trimmed.map((q) => q.id),
+    [],
+  );
+
+  return {
+    assessmentId: assessment.id,
+    attemptId: attempt.id,
+    questions: trimmed.map((q) => ({
+      id: q.id,
+      type: q.type,
+      stem: q.stem,
+      options: q.options,
+    })),
+    servedFromCache: !generatedAny,
+  };
+}
+
 /** Generates, self-checks, and persists questions for one canonical concept. */
 async function generateAndStore(
   user: UserRow,

@@ -78,9 +78,31 @@ export const InsightSchema = z
     body: z.string(),
     severity: z.number().int(),
     conceptIds: z.array(UuidSchema),
-    evidence: z.unknown(),
+    evidence: z.union([
+      z.unknown(),
+      z.null(),
+      z.object({
+        evidenceCount: z.number().int(),
+        beliefConfidence: z.number(),
+        lastEvidenceAt: DateTimeSchema.nullable(),
+        provisional: z.boolean(),
+      }),
+    ]).default(null),
     createdAt: DateTimeSchema,
   })
   .openapi('Insight');
 
 export const InsightsResponseSchema = envelope(z.array(InsightSchema));
+
+export const RootCauseResponseSchema = z.object({
+  weakConceptId: z.string(),
+  chain: z.array(
+    z.object({
+      conceptId: z.string(),
+      mastery: z.number(),
+      readiness: z.number(),
+      strength: z.number(),
+    }),
+  ),
+  evidence: z.union([z.null(), z.unknown()]).default(null),
+});

@@ -25,7 +25,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(function 
         ref={ref}
         aria-invalid={invalid || undefined}
         className={cn(
-          'flex h-10 w-full appearance-none rounded-md border border-input bg-surface px-3 py-2 pr-9 text-sm',
+          'flex h-11 w-full appearance-none rounded-md border border-input bg-surface px-3 py-2 pr-9 text-sm',
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
           'disabled:cursor-not-allowed disabled:opacity-50',
           'aria-invalid:border-destructive aria-invalid:outline-destructive',

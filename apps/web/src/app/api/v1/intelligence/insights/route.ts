@@ -6,9 +6,11 @@ export const runtime = 'nodejs';
 export const GET = authedRoute({
   handler: async ({ user, req }) => {
     const goalId = req.nextUrl.searchParams.get('goalId') ?? undefined;
-    const insights = await listInsights(user, goalId);
+
+    const dbInsights = await listInsights(user, goalId);
+
     return {
-      data: insights.map((i) => ({
+      data: dbInsights.map((i) => ({
         id: i.id,
         type: i.type,
         title: i.title,

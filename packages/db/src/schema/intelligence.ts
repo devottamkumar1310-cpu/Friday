@@ -18,6 +18,7 @@ import { newId } from '../ids';
 import { goals } from './curriculum';
 import { users } from './identity';
 import { feasibilityVerdict } from './planning';
+import { decisionTraces } from './traces';
 
 /**
  * Intelligence tables — DATABASE_DESIGN §4.7.
@@ -86,6 +87,7 @@ export const insights = pgTable(
      * cannot source is an insight it should not state (§4.7).
      */
     evidence: jsonb('evidence').notNull(),
+    decisionTraceId: uuid('decision_trace_id').references(() => decisionTraces.id, { onDelete: 'set null' }),
     isDismissed: boolean('is_dismissed').notNull().default(false),
     validUntil: timestamp('valid_until', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

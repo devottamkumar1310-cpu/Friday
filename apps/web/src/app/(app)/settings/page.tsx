@@ -6,6 +6,7 @@ import { getAvailability, getPreferences } from '@/modules/identity/settings.ser
 import { ProfileForm } from '@/components/settings/profile-form';
 import { FeedbackForm } from '@/components/platform/feedback-form';
 import { PreferencesForm } from '@/components/settings/preferences-form';
+import { DeleteAccountButton } from '@/components/settings/delete-account-button';
 
 export const metadata: Metadata = { title: 'Settings' };
 
@@ -58,7 +59,7 @@ export default async function SettingsPage() {
                 this.
               </CardDescription>
             </div>
-            <Button variant="secondary" size="sm" asChild>
+            <Button variant="secondary" size="sm" asChild className="h-11 px-4">
               <Link href="/onboarding/availability">Edit schedule</Link>
             </Button>
           </div>
@@ -123,9 +124,21 @@ export default async function SettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Button variant="secondary" size="sm" asChild>
+          <Button variant="secondary" size="sm" asChild className="h-11 px-4">
             <Link href="/memory">Review beliefs</Link>
           </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="border-red-500/20">
+        <CardHeader>
+          <CardTitle className="text-red-600 dark:text-red-400">Danger Zone</CardTitle>
+          <CardDescription>
+            Permanently delete your account, study history, and all stored data.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DeleteAccountButton />
         </CardContent>
       </Card>
     </div>

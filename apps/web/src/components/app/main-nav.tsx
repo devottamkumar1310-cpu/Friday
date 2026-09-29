@@ -7,6 +7,7 @@ import {
   BarChart3,
   Brain,
   CalendarDays,
+  CreditCard,
   Dumbbell,
   Menu,
   MessageSquare,
@@ -32,6 +33,7 @@ const LINKS = [
   { href: '/progress', label: 'Progress', icon: BarChart3 },
   { href: '/memory', label: 'Memory', icon: Brain },
   { href: '/settings', label: 'Settings', icon: Settings },
+  { href: '/billing', label: 'Billing', icon: CreditCard },
 ];
 
 export function MainNav() {
@@ -49,7 +51,9 @@ export function MainNav() {
             href={href}
             aria-current={isActive(href) ? 'page' : undefined}
             className={cn(
-              'rounded-md px-2.5 py-1.5 text-sm transition-colors',
+              // `min-h-11` because 768px is a tablet: these links are reached
+              // by thumb there, not by cursor, and 32px was under the floor.
+              'flex min-h-11 items-center rounded-md px-2.5 text-sm transition-colors',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
               isActive(href)
                 ? 'bg-muted font-medium text-foreground'
@@ -63,7 +67,7 @@ export function MainNav() {
 
       <button
         type="button"
-        className="rounded-md p-2 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:hidden"
+        className="flex size-11 items-center justify-center rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:hidden"
         aria-expanded={open}
         aria-controls="mobile-nav"
         aria-label={open ? 'Close menu' : 'Open menu'}

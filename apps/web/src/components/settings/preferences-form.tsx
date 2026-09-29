@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ApiClientError } from '@friday/contracts';
 import { Button, Field, Select, Spinner, toast } from '@friday/ui';
 import { api } from '@/lib/api/client';
+import { applyTheme } from '@/components/app/theme-toggle';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, '0')}:00`);
 
@@ -43,6 +44,9 @@ export function PreferencesForm({
           theme: mode,
         },
       });
+      // Applied here as well as saved. This control used to write `theme` to
+      // the database and leave the page exactly as it was.
+      applyTheme(mode);
       toast.success('Preferences updated.');
       router.refresh();
     } catch (e) {

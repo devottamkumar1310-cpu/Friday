@@ -31,3 +31,4 @@ export * from './feasibility';
 export * from './scheduling';
 export * from './replanning';
 export * from './intelligence';
+export * from './adaptive';

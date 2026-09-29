@@ -30,8 +30,13 @@ export async function checkHealth(): Promise<HealthReport> {
   } catch (error) {
     database = 'unreachable';
     // Logged in full internally; never returned to the caller.
+    //
+    // The cause chain matters here: a driver failure usually wraps the useful
+    // part (`ECONNREFUSED`, `ENOTFOUND`, a TLS complaint) one level down, and
+    // the outer message alone is often just "Failed query".
     logger.error('health check: database unreachable', {
       error: error instanceof Error ? error.message : String(error),
+      ...describeCause(error),
     });
   }
 
@@ -41,4 +46,32 @@ export async function checkHealth(): Promise<HealthReport> {
     revision: process.env['VERCEL_GIT_COMMIT_SHA'] ?? process.env['GIT_COMMIT_SHA'] ?? null,
     uptimeSeconds: Math.round(process.uptime()),
   };
+}
+
+/**
+ * Pulls the useful fields off an unknown thrown value.
+ *
+ * Narrowed with `unknown` and property checks rather than `as any`, so a driver
+ * that changes its error shape produces a missing field rather than a crash
+ * inside the error handler — which would turn an unreachable database into an
+ * unreachable health endpoint.
+ */
+function describeCause(error: unknown): { cause?: string; code?: string } {
+  if (typeof error !== 'object' || error === null) return {};
+
+  const cause = 'cause' in error ? (error as { cause?: unknown }).cause : undefined;
+  const out: { cause?: string; code?: string } = {};
+
+  if (cause instanceof Error) out.cause = cause.message;
+  else if (cause !== undefined) out.cause = String(cause);
+
+  const codeOf = (v: unknown): string | undefined =>
+    typeof v === 'object' && v !== null && 'code' in v
+      ? String((v as { code?: unknown }).code)
+      : undefined;
+
+  const code = codeOf(cause) ?? codeOf(error);
+  if (code) out.code = code;
+
+  return out;
 }

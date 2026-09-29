@@ -1,0 +1,31 @@
+{
+  "name": "friday-mobile",
+  "version": "1.0.0",
+  "main": "expo-router/entry",
+  "dependencies": {
+    "expo": "~57.0.25",
+    "expo-router": "~5.1.0",
+    "expo-status-bar": "~2.2.3",
+    "expo-secure-store": "~14.2.0",
+    "expo-constants": "~17.1.6",
+    "react": "19.0.0",
+    "react-native": "0.79.5",
+    "react-native-safe-area-context": "5.4.0",
+    "react-native-screens": "~4.5.0",
+    "@react-navigation/native": "^7.1.6"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.24.0",
+    "@types/react": "^19.0.2",
+    "typescript": "~5.7.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "lint": "expo lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "private": true
+}

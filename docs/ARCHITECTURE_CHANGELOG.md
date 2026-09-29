@@ -420,6 +420,412 @@ Nothing leaked and nothing was written — `findThread` is scoped by user id, so
 
 ---
 
+## CR-009 — A superseded plan's work is retired with it
+
+**Status:** accepted · **Raised:** Phase 4 adaptive verification · **Type:** defect fix
+
+**Problem.** Re-planning added work instead of replacing it. `supersede` moved the plan row's status to `superseded` and stopped there, leaving that plan's tasks at `pending`. Every reader of outstanding work — `listPendingTasks` — filters on `status` and never on plan, so a learner saw the union of every plan version ever generated.
+
+Collapsing availability from a full week to a single hour made this visible in the worst possible direction: the workload **grew**, from 465 minutes to 555.
+
+| Plan | Status     | Pending tasks | Minutes |
+| ---- | ---------- | ------------- | ------- |
+| v1   | superseded | 10            | 465     |
+| v2   | active     | 2             | 90      |
+
+The scheduler was never at fault. It read the new availability correctly and produced a properly sized 90-minute plan; that plan was then stacked on top of the 465-minute one it was meant to replace. The defect compounded — every re-plan left another version's work behind — which is precisely the backlog this product exists to prevent.
+
+The blast radius was wider than the plan surfaces. `next-action.service` also reads `listPendingTasks`, so FRIDAY could direct a learner into a task belonging to a plan it had already abandoned.
+
+**Change.** `cancelPendingTasksForPlan(userId, planId)` retires the superseded plan's outstanding tasks to `cancelled`, inside the same transaction that supersedes the plan and creates its replacement — so no reader can observe both plans' tasks as pending at once.
+
+Only `pending` is retired. `in_progress` is deliberately excluded: completing a session is itself a re-plan trigger, so a re-plan can fire while a learner is mid-session, and cancelling that task underneath them would destroy work in progress. `completed`, `skipped` and `rescheduled` are history and are never touched — they are the evidence the engine learns from.
+
+**Invariants affected:** none — `cancelled` already existed in `task_status`, so no migration. **Breaking:** no.
+
+**Verified by:** `availability-replan.spec.ts` end to end (the file went from one failure and three tests unreachable to four passing), and `planning-repository.test.ts` for the filter itself, including the in-progress case a browser test cannot easily stage.
+
+---
+
+## CR-010 — The materiality gate could not fire, and missed work was written before it decided
+
+**Status:** accepted · **Raised:** Phase 4 adaptive verification · **Type:** defect fix
+
+Three defects found by building a database-backed proof of missed-work redistribution (`missed-work.integration.test.ts`). The suite failed **7 of 13 properties** on its first run against real rows.
+
+### CR-010a · Drift was computed across two different id spaces
+
+`regeneratePlan` built the outgoing plan's task snapshots as `{ conceptId: t.id }` — the **task row's** uuid — while the candidate side used real **concept** ids. The two sets were disjoint by construction, so `computeDrift`'s first two components (task-date change, next-7-day concept churn) both returned a flat `1.0` regardless of what the scheduler produced.
+
+Drift could therefore never fall below **0.5** against a materiality threshold of **0.15**. Two byte-identical plans scored 0.5. §10.3's "discard a candidate that barely differs" never ran once, and the only thing actually limiting automatic re-plans was the churn budget.
+
+The number was also logged and returned to callers as though it meant something, which is the worse half: a fictional dial reported as a real one.
+
+**Change.** `loadPlanTaskSnapshots` joins `task_concepts` so both sides are keyed by concept. Observed drift on the same scenario moved from a pinned `0.5` to `0.325`.
+
+### CR-010b · Missed work was retired before the gate decided
+
+The §10.4 marking ran at the top of `regeneratePlan`, before the materiality gate. When the gate then declined to commit — immaterial diff, or churn budget spent — the outgoing tasks had already been marked and **no new plan replaced them**, so the work vanished from the learner's queue entirely.
+
+CR-010a is what made this reachable: while drift was pinned above threshold, the gate never declined, so the bug was latent. Fixing the gate would have exposed it.
+
+**Change.** `regeneratePlan` now only _identifies_ missed work; the write happens inside `persistPlan`'s transaction, alongside the supersede.
+
+### CR-010c · A concept with work in flight was scheduled twice
+
+CR-009 correctly preserves an `in_progress` task across a re-plan. The scheduler had no way to know that, so it queued a **second** task for the same concept — a learner mid-session on Projectile Motion came back to find it listed twice, once in progress and once fresh.
+
+**Change.** `generatePlan` accepts `inFlightConceptIds` and excludes them from the eligible queue. They stay _in the graph_, so their dependents' readiness still gates correctly — filtering them out at the caller would have silently unblocked everything downstream.
+
+### Retirement semantics refined
+
+`retireSupersededTasks` splits CR-009's single `cancelled` outcome by cause, because the difference belongs to the learner rather than to bookkeeping:
+
+| Outcome       | Meaning                                        |
+| ------------- | ---------------------------------------------- |
+| `rescheduled` | was due, not done — the history records a miss |
+| `cancelled`   | was not due yet — nothing was missed           |
+
+`in_progress`, `completed` and `skipped` remain untouched, per CR-009.
+
+**Invariants affected:** none. **Breaking:** no.
+
+**Verified by:** `missed-work.integration.test.ts` — 13 properties against real persisted rows, comparing whole task ledgers before and after, including no-compounding across four consecutive regenerations and the dashboard recommendation belonging to the active plan. Controlled proofs for exam-weight ordering and in-flight exclusion added to `core/scheduling`'s suite; exam-weight prioritisation previously had **no test at all**.
+
+**Measured before/after** (one new-day re-plan, same scenario):
+
+|              | live tasks | live minutes | live plan versions                   |
+| ------------ | ---------- | ------------ | ------------------------------------ |
+| before fixes | 18         | 750          | v1 + v2                              |
+| after fixes  | 10         | 420          | v2 (+ one preserved in-progress row) |
+
+---
+
+## CR-011 — Feasibility believed one session finished a concept
+
+**Found by:** the closed-loop proof, on its first run against real persisted data.
+
+`toFeasibilityConcepts` keyed remaining work off `reps > 0`, so a single session of any quality flipped a concept's remaining learn time from its full estimate straight to zero. Measured: a learner studied Newton's Laws for 45 minutes, came out with mastery `0.098` — started it, understood almost none of it — and required minutes fell 470 → 430.
+
+The scheduler, which reads mastery properly, disagreed in the same breath and kept the full 50-minute `learn` task on the plan. The two halves of the engine described different worlds, and the half shown to the learner — verdict, slack, projected completion date — was the optimistic one.
+
+**Change.** Both terms scale by mastery, so the total is monotonically decreasing:
+
+| mastery | learn | review | total |
+| ------- | ----- | ------ | ----- |
+| 0.0     | 50    | 0      | 50    |
+| 0.1     | 45    | 1      | 46    |
+| 1.0     | 0     | 10     | 10    |
+
+**Invariants affected:** none. **Breaking:** no.
+
+---
+
+## CR-012 — A single missed day could strand a task forever
+
+**Found by:** the 60-minutes-a-day missed-day scenario.
+
+Missing exactly one day produces a candidate that is the same plan shifted a day: drift `0.025` against a `0.15` threshold. The new-day trigger fired, computed a correct and tiny drift, and declined to commit. Nothing committed, so nothing was retired, and the learner opened the app to a `pending` task dated yesterday — the overdue backlog §10.4 promises cannot exist.
+
+The gate asks "is the candidate different enough to be worth disturbing the learner?" That is the right question about a candidate and the wrong one when the _current_ plan is the problem.
+
+**Change.** `missedTaskCount > 0` makes a re-plan material regardless of drift, and exempts it from the churn budget. The exemption is self-extinguishing: the commit it permits retires the missed work, after which it stops applying. Without the budget exemption the failure would only move — the learner would still see yesterday's task, now because they had also finished a session the previous afternoon.
+
+**Invariants affected:** none. **Breaking:** no.
+
+---
+
+## CR-013 — An in-flight prerequisite emptied the entire plan
+
+**Found by:** the availability-change scenario.
+
+CR-010c excluded in-flight concepts from the eligible queue. That stopped the duplicate task and also erased them from the graph's notion of what was covered, so every dependent failed its prerequisite check. The seeded curriculum hangs almost entirely off one root, so a learner who started their first task and then edited their availability got back a plan with **no tasks in it at all**.
+
+**Change.** In-flight concepts are seeded into `scheduledConceptIds` instead. Every candidate filter already skips that set, so there is still no second task; `isPlaceable`/`prerequisiteInputs` treat membership as handled, so dependents follow work the learner is actively doing. They also stop being reported as unscheduled, because they are not dropped — they are in progress.
+
+The core spec asserting that dependents stay blocked encoded the bug and now asserts the opposite.
+
+**Invariants affected:** none. **Breaking:** no.
+
+---
+
+## CR-014 — The churn budget silently discarded availability increases
+
+**Found by:** the availability-change scenario.
+
+Cutting availability from two hours a day to thirty minutes committed. Raising it back to three hours minutes later returned `churn_budget_exceeded`. The plan went on describing a thirty-minute week the learner had already corrected, and the freed-up time was thrown away.
+
+**Change.** `constraint` is exempt from the churn budget, on different grounds from CR-012's exemption. Availability is not a preference about the plan, it is a fact about the learner's life, and a plan that contradicts it is not stale but incorrect. The materiality gate still stops a settings form that posts on every blur: re-saving identical rules scores drift `0` and does not commit.
+
+**Invariants affected:** none. **Breaking:** no.
+
+---
+
+## CR-015 — Goals were write-once, and drift could not see a horizon change
+
+**Found by:** the goal-change audit.
+
+Goals had `POST` and `GET`, no `PATCH`, and no `update` on the repository. The exam date sets the horizon every projection, verdict and priority is computed against, and it was the one input the learner could not correct.
+
+**Change.** `PATCH /v1/goals/:goalId` accepts `targetDate`, `targetWeeklyMinutes`, `title`, `description` — pure planner inputs that cannot orphan evidence, because mastery, memory and sessions are keyed to concepts and the concepts do not move. The **curriculum stays immutable**: swapping it would orphan every row earned against concepts that no longer belong to the goal, and a learner changing _what_ they study is starting something new, which `POST /v1/goals` already expresses without destroying the old goal's history.
+
+The integration proof then found the edit changed nothing. Pulling the exam in from 120 days to 21 scored drift `0.0425` and was discarded — correctly, as far as it could see: the fourteen-day task list does not change when the far horizon shrinks but the work still fits. But a plan row also stores the verdict, the slack and the projected completion date, so the committed plan reported 7,200 available minutes against the 1,260 the learner actually had.
+
+`computeDrift` was measuring the demand side of a feasibility calculation and not the supply side. Capacity is now a fifth equally-weighted signal.
+
+|            | version | target     | required | available |
+| ---------- | ------- | ---------- | -------- | --------- |
+| before     | v1      | 2026-12-12 | 470m     | 7200m     |
+| pulled in  | v2      | 2026-09-04 | 466m     | 1260m     |
+| pushed out | v3      | 2027-02-10 | 466m     | 10800m    |
+| renamed    | v3      | unchanged  | —        | —         |
+
+**Invariants affected:** none. **Breaking:** no — `DriftInput` gains two required fields, internal to the planner.
+
+---
+
+## CR-016 — Two concurrency races at the write boundary
+
+**Found by:** the adversarial data-integrity pass (25 attacks).
+
+**Concurrent session completion.** `findSession` is an ordinary `SELECT`, so two concurrent completions both read `status = 'active'`, both passed the guard, and both wrote: two evidence events and two mastery updates from a single sitting. A double-tapped Finish button was enough to inflate the learner's own mastery. `findSessionForUpdate` takes a row lock, so the loser blocks until the winner commits, re-reads `completed`, and is rejected by the guard that was already there. `abandonSession` had the same shape and is now a single locked transaction.
+
+**Concurrent availability saves.** `replaceAll` is a delete and an insert with nothing serialising them, so two saves could interleave and leave a _blended_ rule set — some days at the old capacity and some at the new. It now locks the owning `users` row, and the caller supplies the transaction.
+
+The plan briefly lagging the winning availability is left as **safe degradation** and documented as such: each save writes then re-plans, so with two in flight the last plan to commit may have read the earlier capacity. The rules are the source of truth, nothing is lost, and the next re-plan reconciles.
+
+**Invariants affected:** none. **Breaking:** no.
+
+---
+
+## CR-017 — The panel claimed a session size the planner did not deliver
+
+**Found by:** the adaptive claim audit.
+
+The Live Intelligence Panel renders "Held your sessions at about 15 minutes" from `profile.targetSessionMinutes`, and directly beneath it renders the recommended task's duration. Measured: the dial read 15 and the recommendation was 50 minutes — and passing 120 instead of 15 produced the identical recommendation.
+
+The wire was never missing. The gap is what happens when _nothing_ fits: `core/priority` deliberately returns the top candidate whole rather than substituting a lesser one (§7.2 step 3). That is the right call for the ranking — every concept in the seeded curriculum is 40–60 minutes, and offering a worse topic because it is shorter would be worse advice — and the wrong thing to narrate as "I sized your session".
+
+**Change.** The claim is dropped rather than reworded, per the standing rule that an unenforced claim is removed rather than dressed up. FRIDAY did adapt the budget and the ranking really was fitted against it; it simply has nothing short enough to offer today. Restoring the claim requires the planner to **size tasks to the session**, which is Phase 4 work.
+
+**Invariants affected:** none. **Breaking:** no.
+
+---
+
+## CR-018 — `format:check` was reporting environmental noise as a formatting backlog
+
+`pnpm format:check` reported 43 files. Classifying each against its own Prettier output showed 42 were byte-identical apart from carriage returns, and exactly one — README.md — had a genuine difference. The cause is `core.autocrlf=true` with no `.gitattributes`.
+
+Reformatting the 42 would have produced an enormous diff and fixed nothing durably, since the next Windows checkout reintroduces every CRLF. A check that reports noise and real problems in one undifferentiated list is a check nobody reads — and the one file that needed attention had been sitting inside it.
+
+**Change.** `.gitattributes` declares `* text=auto eol=lf`, with binaries excluded. `git add --renormalize .` confirmed the whole-repository staged diff was README.md's two lines and nothing else.
+
+**Invariants affected:** none. **Breaking:** no.
+
+---
+
+## CR-019 — Task sizing became genuinely adaptive
+
+**Closes CR-017.**
+
+CR-017 removed a sentence because the product could not back it: the panel said
+"about 15 minutes" and the task underneath said "50 min". The wire was never
+missing — the dial reached the selector, which walks the ranking for a task that
+fits. But every task had been sized at _plan_ time from its concept's own
+estimate, so for a learner who studies in fifteen-minute blocks against a
+curriculum of forty-to-sixty-minute concepts nothing ever fitted, and
+`core/priority` correctly returned the top candidate whole (§7.2 step 3).
+
+**Change.** `generatePlan` takes `sessionBudgetMinutes` and sizes blocks to it.
+A `remainingByConceptId` ledger replaces the previous boolean "scheduled or
+not", so a concept's remainder stays owed and is picked up on a later day.
+
+That second half mattered more than expected: placement previously truncated
+`minutes` to whatever capacity was left, so a fifty-minute concept meeting a
+twenty-minute gap became a twenty-minute task and the other thirty minutes
+ceased to exist. The plan quietly decided the learner needed less work than it
+had itself calculated.
+
+Only a fully-allocated concept counts as covered, so a half-studied prerequisite
+still cannot unblock its dependents (I-4).
+
+| mastery of the rule            | behaviour                                |
+| ------------------------------ | ---------------------------------------- |
+| `band: unknown`                | no budget; tasks keep their natural size |
+| concept smaller than the floor | taken whole, never padded                |
+| budget below the floor         | nothing placed, rather than a scrap      |
+
+**Measured:** claim 15 min, dial 15 min, persisted task 15 min.
+
+**Invariant changed.** "One concept, one task" was sound while a concept meant a
+single task. Splitting breaks that premise deliberately, so nine assertions
+across five suites were restated from counting rows to the property they were
+written to protect — the same work must never be offered twice — now expressed
+as `duplicateConceptsOnSameDay` plus conservation of per-concept minutes.
+
+---
+
+## CR-020 — A struggling learner could be given an empty plan
+
+**Found by:** the ten-persona pass, and only after its first assertion was
+strengthened.
+
+`core/adaptive`'s dial bottoms out at `MIN_SESSION_MINUTES = 10`. The
+scheduler's meaningful-block floor was a flat 15. Those two constants
+contradicted each other, and the learner caught in the gap was the worst
+possible one: a struggling learner, whose budget had just been cut to 10
+_because_ they abandon everything after three minutes, got **no tasks at all**.
+
+The persona test hid it: `Math.max()` of an empty array is `-Infinity`, which
+satisfies `<= 10`. The assertion passed on a plan with nothing in it.
+
+**Change.** The floor bends to the learner — `min(15, budget)` — bounded below
+at 10, the lowest the dial itself will ever conclude. A block is meaningful
+relative to the person doing it; insisting on fifteen for someone the engine has
+measured at ten guarantees the abandonment the shortened budget exists to
+prevent. A budget below 10 did not come from observing anyone and still places
+nothing.
+
+**Invariants affected:** none. **Breaking:** no.
+
+---
+
+## CR-021 — Idle database connections collapsed the test suite
+
+`pg.Pool` emits `error` when a client fails while sitting idle. That is routine
+against serverless Postgres — the provider closes idle connections — but Node
+treats an unhandled `error` on an EventEmitter as fatal, and no handler was
+attached. A normal suspension surfaced as a whole test file's `beforeAll`
+collapsing and taking a hundred assertions with it as "skipped".
+
+**Change.** An `error` handler, `idleTimeoutMillis` dropped below the provider's
+own cut-off, and TCP keepalives on, so the pool recycles a socket before the
+server closes it rather than handing out a dead one.
+
+**Measured:** full integration suite 8 files failed / 102 skipped → 8 passed /
+109 passed.
+
+`console.warn` rather than `@friday/observability`: `packages/db` sits below it
+and the boundary is lint-enforced. The dependency was added, the rule caught it,
+and the rule was right.
+
+---
+
+## CR-022 — The Coach could contradict the planner about the enforced dial
+
+The context packet already carried `targetSessionMinutes` with a clear
+instruction. The _prompt_ then undid it: "Always close by asking for a number of
+minutes", with worked examples of 8, 12, 18 and 20, and nothing tying the figure
+to the engine. A learner could be shown a 15-minute task and told to give it 20.
+
+**Change.** The time box is explicitly not the model's to choose — it is the
+minutes on the recommended task, or the enforced budget when no task is named.
+The examples are labelled as illustrating sentence shape rather than supplying
+values.
+
+**Verified by:** `coach-consistency.integration.test.ts`, asserting on the
+**packet** rather than on generated text, because the packet is deterministic
+and a guarantee made there holds on every call.
+
+---
+
+## CR-023 — Every icon button and form control was below the tap-target floor
+
+**Found by:** `audit-matrix.spec.ts` — 7 surfaces x 6 viewports x 2 themes.
+
+P0 was clean: no overflow and no contrast failure anywhere. 336 tap-target
+findings reduced to six distinct controls, all genuine:
+
+| control              | was  | now |
+| -------------------- | ---- | --- |
+| icon buttons (token) | 40px | 44  |
+| menu disclosure      | 36px | 44  |
+| theme toggle         | 36px | 44  |
+| wordmark link        | 20px | 44  |
+| nav links            | 32px | 44  |
+| inputs and selects   | 40px | 44  |
+
+The menu disclosure is the primary navigation control on a phone. Fixed at the
+shared primitive wherever one existed.
+
+The first audit run also produced 28 contrast "defects", every one of them the
+detector's fault: the tokens are `oklch()`, and a `[\d.]+` regex reads
+`oklch(0.17 0.008 260)` as an RGB triple. Colours now resolve through a canvas.
+
+---
+
+## CR-024 — Mission Control's capacity was a tautology, and today counted retired work
+
+Both found while making redistribution visible.
+
+`capacityToday` was the **sum of today's own task minutes**, so
+`plannedMinutes <= capacityMinutes` held by construction and the dashboard read
+"90 min of 90" whatever the learner had actually made time for. Nothing could
+ever show as over capacity, including a day that was. It now comes from the
+availability rules the scheduler plans against, so the two agree by construction.
+
+`listTasksInWindow` filters by date and goal, not status, so today's list
+included the `rescheduled` and `cancelled` rows a re-plan had just retired —
+inflating every total drawn from it.
+
+---
+
+## CR-025 — Redistribution was correct and invisible
+
+FRIDAY has retired missed work and re-derived placement since Phase 3. But doing
+the right thing invisibly is indistinguishable from not doing it: a learner who
+missed a day saw a normal-looking list and no way to know whether the debt was
+hiding somewhere.
+
+**Change.** `plans.diff_summary` — a column that has existed since Phase 1 and
+was written as literal `null` on every plan ever created — now records what the
+retiring transaction actually did. The panel renders one line inside the
+existing "What I changed" beat; no new card.
+
+Every clause is gated on a fact. The count comes from the write; the "nothing
+was added" half is re-derived at read time and simply omitted if it does not
+hold. There is deliberately no fallback wording: a learner told nothing was
+added who then finds a doubled Tuesday stops believing the next claim too.
+
+> 1 missed task went back into the queue.
+> Nothing was added to today — still 40 min of 60.
+
+---
+
+## CR-026 — Round trips, and a performance budget that could not fail for our reasons
+
+The performance suite had been failing every budget for the whole phase. Its own
+header explained why nobody could act on it: it claimed to run "against a local
+PostgreSQL". Against a managed Postgres in another region one round trip costs
+~138ms, so a 200ms read budget is unreachable regardless of the code.
+
+Two problems were hiding behind that, and only one was the environment's.
+
+**Real N+1s.** `listSessions` resolved task titles by calling `findTask` in a
+loop. Mission Control awaited four independent reads one at a time, then
+hydration and the Next Action separately; `getNextAction` did the same with the
+goal lookup, the candidate build and the decision trace, and again with
+concepts/mastery/memory.
+
+| endpoint        | p50 before | p50 after | round trips |
+| --------------- | ---------- | --------- | ----------- |
+| mission-control | 3560ms     | 1951ms    | ~24 → ~12   |
+| next-action     | 1139ms     | 991ms     | ~9 → ~6     |
+| /tasks          | 1237ms     | 772ms     | ~8 → ~6     |
+
+**A measurement worth keeping.** The suite now measures its own floor and
+reports every figure in round trips as well as milliseconds. Round trips are
+what the application controls; latency per trip is what the environment imposes.
+The absolute NFR budgets are still asserted, but only when the floor shows a
+co-located database.
+
+This is not a weaker test. Before, every endpoint failed for the same
+un-actionable reason and a genuine regression would have been invisible in the
+noise. Now `next-action` fails if it grows past 8 trips — and it caught itself
+at 9 during this work, which is how it ended up at 6.
+
+---
+
 ---
 
 ## Baseline History

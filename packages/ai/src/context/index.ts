@@ -1,3 +1,4 @@
+import type { AdaptiveProfile } from '@friday/core';
 import type { AgentName } from '../types';
 
 /**
@@ -77,6 +78,16 @@ export interface LearnerContextPacket {
   plan: PacketPlan | null;
   mastery: PacketMastery;
   recent: PacketRecent;
+  /**
+   * What the adaptive engine observed and decided.
+   *
+   * Present so the Coach reports the decisions the system actually made rather
+   * than improvising a rationale that sounds better. It is deliberately absent
+   * from every truncation tier below: a Coach that has lost this section will
+   * fill the gap with a plausible invention, which is the exact failure the
+   * prompt spends most of its length forbidding.
+   */
+  adaptive: AdaptiveProfile | null;
   facts: PacketFact[];
   /** Semantic hits. Always empty until Phase 3 introduces pgvector (D11). */
   retrieved: { source: string; content: string }[];
@@ -115,6 +126,7 @@ export interface BuildPacketInput {
   plan?: PacketPlan | null;
   mastery?: Partial<PacketMastery>;
   recent?: Partial<PacketRecent>;
+  adaptive?: AdaptiveProfile | null;
   facts?: PacketFact[];
   retrieved?: { source: string; content: string }[];
 }
@@ -154,6 +166,7 @@ export function buildContextPacket(
       last5Sessions: (input.recent?.last5Sessions ?? []).slice(0, 5),
       last3Assessments: (input.recent?.last3Assessments ?? []).slice(0, 3),
     },
+    adaptive: input.adaptive ?? null,
     facts: [...(input.facts ?? [])].sort((a, b) => b.confidence - a.confidence),
     retrieved: input.retrieved ?? [],
     meta: {
@@ -255,6 +268,63 @@ export function renderPacket(packet: LearnerContextPacket): string {
     }
     for (const a of packet.recent.last3Assessments) {
       lines.push(`- Assessment ${a.date}: ${a.score ?? '—'}/${a.maxScore ?? '—'}`);
+    }
+  }
+
+  if (packet.adaptive) {
+    const a = packet.adaptive;
+    lines.push('', '## Adaptive read');
+
+    if (a.band === 'unknown') {
+      // Stated as a hard instruction rather than a fact to interpret. Left as
+      // bare data, this is the section a model is most tempted to embellish.
+      lines.push(
+        `Too little evidence to adapt (${a.metrics.observedSessions} finished sessions).`,
+        'Say so plainly. Do NOT infer a study pattern from this — there is not one here yet.',
+      );
+    } else {
+      lines.push(
+        `Band: ${a.band} · consistency ${(a.metrics.consistencyScore * 100).toFixed(0)}% ` +
+          `· ${a.metrics.daysStudiedInWindow}/${a.metrics.windowDays} study days ` +
+          `· ${(a.metrics.sessionCompletionRate * 100).toFixed(0)}% of sessions finished ` +
+          `· avg ${a.metrics.sessionDurationAvgMinutes} min · confidence ${a.confidence}`,
+      );
+      lines.push(`Trend over the last 3 sessions: ${a.trend}`);
+
+      // Continuity, with the guard restated. This is the line a model will most
+      // want to reach for unprompted, because it is the most affecting thing it
+      // can say — so the absence of one is made explicit rather than left as a
+      // missing field the model can fill in for itself.
+      lines.push(
+        a.transition
+          ? `Continuity: was "${a.transition.from}" in the previous fortnight, now "${a.transition.to}" (${a.transition.direction}). You may state this.`
+          : 'Continuity: NOT ESTABLISHED. Do not claim they have improved, slipped, or changed since any earlier period.',
+      );
+
+      /**
+       * One dial, and only one, because only one is enforced.
+       *
+       * This line used to also carry workload, guidance and difficulty. Nothing
+       * in the product read any of them, so every time the Coach repeated one it
+       * told the learner about a change that had not happened. They are gone
+       * from the profile entirely — this comment exists so nobody re-adds them
+       * here from memory.
+       */
+      lines.push(
+        `Enforced change: sessions are sized at ${a.targetSessionMinutes} minutes, and the ` +
+          `Next Action is ranked and fitted against that budget. This is the ONLY plan change ` +
+          `the system makes. Do not claim workload, difficulty, ordering or guidance changed.`,
+      );
+      lines.push(`Stance: ${a.stance} — see the register rules for what this means.`);
+    }
+
+    if (a.observations.length > 0) {
+      lines.push('Observed:');
+      for (const o of a.observations) lines.push(`- ${o.statement} (${o.evidence})`);
+    }
+    if (a.decisions.length > 0) {
+      lines.push('Decided:');
+      for (const d of a.decisions) lines.push(`- ${d.change} Because: ${d.because}`);
     }
   }
 

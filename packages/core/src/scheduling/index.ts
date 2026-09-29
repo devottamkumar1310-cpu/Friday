@@ -93,7 +93,82 @@ export interface SchedulingInput {
   config: PriorityConfig;
   /** Hard prerequisite threshold — edges at or above this block placement (I-4). */
   hardPrerequisiteStrength?: number;
+  /**
+   * Concepts the learner already has an unfinished task for.
+   *
+   * A re-plan supersedes *intentions*, not work in flight: a task the learner
+   * has already started keeps its row and its date. Without this, the new plan
+   * had no way to know that, and cheerfully scheduled a second task for the
+   * same concept — so a learner mid-session on Projectile Motion came back to
+   * find it queued twice, once in progress and once fresh.
+   *
+   * They stay in the graph rather than being filtered out by the caller,
+   * because their dependents' readiness still depends on them.
+   */
+  inFlightConceptIds?: ReadonlySet<string>;
+  /**
+   * The learner's observed session length, when the adaptive engine has enough
+   * evidence to have one. Omitted for a learner it cannot yet read.
+   *
+   * This is what makes "I shortened your session" a fact rather than a caption.
+   * Before it existed, the dial reached the *selector* — which walks the ranking
+   * for a task that fits — but every task had been sized at plan time from the
+   * concept's own estimate, so for a learner who studies in fifteen-minute
+   * blocks against a curriculum of forty-minute concepts, nothing ever fitted.
+   * The selector then correctly returned the top candidate whole (§7.2 step 3),
+   * and the panel announced a fifteen-minute session above a fifty-minute task.
+   *
+   * A learner who studies in fifteen-minute blocks should have a plan built out
+   * of fifteen-minute blocks. The concept is not cut down to fit — its
+   * remainder stays owed and is picked up on a later day.
+   */
+  sessionBudgetMinutes?: number;
 }
+
+/**
+ * The default smallest block that is still worth calling a study session.
+ *
+ * Below a quarter of an hour a "task" generally stops being learning and
+ * becomes an interruption, so this is the floor for a learner the engine has no
+ * reading on.
+ *
+ * A concept whose *whole* estimate is already smaller than this is exempt: a
+ * nine-minute concept is a nine-minute task, and padding it to fifteen would be
+ * inventing work to fill a number.
+ */
+const MIN_MEANINGFUL_BLOCK_MINUTES = 15;
+
+/**
+ * The floor for a learner the engine *has* a reading on.
+ *
+ * The adaptive dial bottoms out at 10 minutes; this floor was a flat 15. Those
+ * two constants contradicted each other, and the learner caught in the gap was
+ * the worst possible one: a struggling learner, whose budget the engine had
+ * just cut to 10 because they abandon everything after three minutes, got a
+ * **completely empty plan**. Nothing could be placed, because nothing could be
+ * smaller than 15. The person most in need of one achievable task was handed
+ * none at all.
+ *
+ * A block is meaningful relative to the person doing it. If FRIDAY has
+ * concluded from real sessions that this learner studies in ten-minute
+ * stretches, then ten minutes is what a meaningful block is for them, and
+ * insisting on fifteen guarantees the abandonment the shortened budget exists
+ * to prevent.
+ */
+function meaningfulBlockFloor(sessionBudgetMinutes: number | undefined): number {
+  if (sessionBudgetMinutes === undefined) return MIN_MEANINGFUL_BLOCK_MINUTES;
+  // Bends, but not without limit. Ten minutes is the lowest the adaptive dial
+  // itself will ever conclude, so it is the lowest any *evidence* can justify;
+  // a tighter budget than that did not come from observing the learner, and
+  // honouring it would be fragmenting a topic rather than adapting to anyone.
+  return Math.max(
+    ABSOLUTE_BLOCK_FLOOR_MINUTES,
+    Math.min(MIN_MEANINGFUL_BLOCK_MINUTES, sessionBudgetMinutes),
+  );
+}
+
+/** Mirrors `MIN_SESSION_MINUTES` in `core/adaptive` — the dial's own floor. */
+const ABSOLUTE_BLOCK_FLOOR_MINUTES = 10;
 
 const DAY_MS = 86_400_000;
 
@@ -171,9 +246,11 @@ export function generatePlan(input: SchedulingInput): SchedulingResult {
       .filter((c) => ['learned', 'mastered', 'already_known'].includes(c.status))
       .map((c) => c.id),
   );
+  const inFlight = input.inFlightConceptIds ?? new Set<string>();
   const eligibleQueue = order.filter((id) => {
     const c = graph.nodes.get(id);
-    return c && c.status !== 'excluded' && c.status !== 'mastered' && c.status !== 'already_known';
+    if (!c) return false;
+    return c.status !== 'excluded' && c.status !== 'mastered' && c.status !== 'already_known';
   });
 
   const days: ScheduledDay[] = input.windowCapacity.map((w) => ({
@@ -189,23 +266,65 @@ export function generatePlan(input: SchedulingInput): SchedulingResult {
       .map(([conceptId]) => conceptId),
   );
 
-  const scheduledConceptIds = new Set<string>();
+  /**
+   * Seeded with the in-flight concepts, which is what makes them behave
+   * correctly on both counts at once.
+   *
+   * Every candidate filter below already skips what is in this set, so an
+   * in-flight concept gets no second task — the duplication this input exists
+   * to prevent. And `isPlaceable`/`prerequisiteInputs` treat membership as
+   * "handled", so a concept the learner is *currently working through* satisfies
+   * its dependents' prerequisites.
+   *
+   * Filtering them out of the eligible queue instead — the obvious first
+   * implementation — got the first half right and the second half catastrophically
+   * wrong. The concept vanished from the graph's notion of what was covered, so
+   * every dependent failed its prerequisite check, and because the seeded
+   * curriculum hangs almost entirely off one root, starting the first task and
+   * then changing availability produced a **completely empty plan**. The learner
+   * opens the app to nothing to do.
+   */
+  const scheduledConceptIds = new Set<string>(inFlight);
   const scheduledDateOf = new Map<string, string>();
+
+  /**
+   * How much of each concept is still owed.
+   *
+   * Placement used to be a boolean: a concept was scheduled or it was not, and
+   * `minutes` was silently truncated to whatever capacity was left. A
+   * fifty-minute concept meeting a twenty-minute gap became a twenty-minute
+   * task and the other thirty minutes ceased to exist — the plan quietly
+   * decided the learner needed less work than it had itself calculated.
+   *
+   * Tracking the remainder is what lets a session budget be honoured without
+   * losing anything: the block is sized to the learner, and the rest stays owed
+   * and is picked up on a later day or falls through to the projection.
+   */
+  const remainingByConceptId = new Map<string, number>();
+  for (const concept of input.concepts) {
+    remainingByConceptId.set(concept.id, concept.estimatedMinutes);
+  }
 
   for (const day of days) {
     let remaining = day.capacityMinutes;
     const dayIndex = days.indexOf(day);
     const asOf = new Date(input.today.getTime() + dayIndex * DAY_MS);
+    // A concept may span days, but never appears twice on the same one.
+    const placedToday = new Set<string>();
 
     // (a) due reviews first — retention debt is never deferred (§6.3 step 3a, DP8).
     const dueToday = eligibleQueue.filter(
-      (id) => dueConceptIds.has(id) && !scheduledConceptIds.has(id),
+      (id) => dueConceptIds.has(id) && !scheduledConceptIds.has(id) && !placedToday.has(id),
     );
     remaining = placeCandidates(dueToday, 'revise');
 
     // (b) fill remaining capacity by descending placement score, respecting readiness.
     const learnCandidates = eligibleQueue.filter(
-      (id) => !dueConceptIds.has(id) && !scheduledConceptIds.has(id) && isPlaceable(id),
+      (id) =>
+        !dueConceptIds.has(id) &&
+        !scheduledConceptIds.has(id) &&
+        !placedToday.has(id) &&
+        isPlaceable(id),
     );
     const ranked = learnCandidates
       .map((id) => {
@@ -226,8 +345,24 @@ export function generatePlan(input: SchedulingInput): SchedulingResult {
       for (const id of ids) {
         if (cap <= 0) break;
         const concept = graph.nodes.get(id)!;
-        const minutes = Math.min(concept.estimatedMinutes, Math.max(cap, 0));
-        if (minutes < Math.min(15, concept.estimatedMinutes)) continue;
+
+        const owed = remainingByConceptId.get(id) ?? concept.estimatedMinutes;
+        if (owed <= 0) continue;
+
+        // The block is bounded by three things at once: what is still owed on
+        // this concept, what is left of today, and how long this learner
+        // actually studies for. The session budget is the only one of the three
+        // that is about the person rather than the arithmetic.
+        const ceiling = Math.min(
+          Math.max(cap, 0),
+          input.sessionBudgetMinutes ?? Number.POSITIVE_INFINITY,
+        );
+        const minutes = Math.min(owed, ceiling);
+
+        // Never a fragment — but never padded either. A concept smaller than the
+        // floor is taken whole rather than stretched to reach it, and the floor
+        // itself bends to a learner who has shown they study in shorter bursts.
+        if (minutes < Math.min(meaningfulBlockFloor(input.sessionBudgetMinutes), owed)) continue;
         const mastery = input.masteryStates.get(id);
         const memory = input.memoryStates.get(id);
         const prereqs = prerequisiteInputs(id);
@@ -247,8 +382,15 @@ export function generatePlan(input: SchedulingInput): SchedulingResult {
         });
         day.plannedMinutes += minutes;
         cap -= minutes;
-        scheduledConceptIds.add(id);
-        scheduledDateOf.set(id, day.date);
+        placedToday.add(id);
+
+        const stillOwed = owed - minutes;
+        remainingByConceptId.set(id, stillOwed);
+        // Only a fully-allocated concept counts as covered — which is what
+        // `isPlaceable` and `prerequisiteInputs` read. A half-studied
+        // prerequisite must not unblock its dependents (I-4).
+        if (stillOwed <= 0) scheduledConceptIds.add(id);
+        if (!scheduledDateOf.has(id)) scheduledDateOf.set(id, day.date);
       }
       return cap;
     }
@@ -292,9 +434,17 @@ export function generatePlan(input: SchedulingInput): SchedulingResult {
     }
   }
 
+  // "Unscheduled" now means "still owed at the end of the window", which
+  // correctly includes the tail of a concept that was partially placed: part of
+  // it is in the window, the rest belongs to the projection.
   const scheduledOrLearned = new Set([...scheduledConceptIds, ...learned]);
   const unscheduled = input.concepts
-    .filter((c) => c.status !== 'excluded' && !scheduledOrLearned.has(c.id))
+    .filter(
+      (c) =>
+        c.status !== 'excluded' &&
+        !scheduledOrLearned.has(c.id) &&
+        (remainingByConceptId.get(c.id) ?? 0) > 0,
+    )
     .map((c) => c.id);
 
   const projection = buildProjection(

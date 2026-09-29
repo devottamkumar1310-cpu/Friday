@@ -60,6 +60,93 @@ describe('error taxonomy', () => {
   });
 });
 
+import { InsightSchema, RootCauseResponseSchema } from '../schemas/intelligence';
+
+describe('insight evidence citation', () => {
+  it('valid evidence-backed insight is preserved', () => {
+    const insight = InsightSchema.parse({
+      id: '018f3a2b-0000-7000-8000-000000000000',
+      type: 'weakness',
+      title: 'Test insight',
+      body: 'Test body',
+      severity: 2,
+      conceptIds: [],
+      evidence: { count: 5, sources: ['session'] },
+      createdAt: '2026-07-24T09:30:00Z',
+    });
+    expect(insight.evidence).toEqual({ count: 5, sources: ['session'] });
+  });
+
+  it('insight with null evidence from missing/invalid trace is allowed', () => {
+    const insight = InsightSchema.parse({
+      id: '018f3a2b-0000-7000-8000-000000000000',
+      type: 'weakness',
+      title: 'Test insight',
+      body: 'Test body',
+      severity: 2,
+      conceptIds: [],
+      evidence: null,
+      createdAt: '2026-07-24T09:30:00Z',
+    });
+    expect(insight.evidence).toBeNull();
+  });
+
+  it('insight schema accepts undefined evidence and defaults to null', () => {
+    const result = InsightSchema.safeParse({
+      id: '018f3a2b-0000-7000-8000-000000000000',
+      type: 'weakness',
+      title: 'Test insight',
+      body: 'Test body',
+      severity: 2,
+      conceptIds: [],
+      evidence: undefined,
+      createdAt: '2026-07-24T09:30:00Z',
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.evidence).toBeNull();
+  });
+
+  it('API contract: insight response includes evidence field', () => {
+    const doc = buildOpenApiDocument();
+    const path = doc.paths?.['/intelligence/insights']?.get;
+    expect(path).toBeDefined();
+    expect(path?.responses?.['200']).toBeDefined();
+  });
+});
+
+describe('insight evidence citation: root-cause', () => {
+  it('root-cause chain includes concept mastery and readiness', () => {
+    const chain = [
+      { conceptId: 'c2', mastery: 0.3, readiness: 0.45, strength: 1 },
+      { conceptId: 'c1', mastery: 0.7, readiness: 0.82, strength: 1 },
+    ];
+    const result = RootCauseResponseSchema.safeParse({
+      weakConceptId: 'w1',
+      chain,
+      evidence: undefined,
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.chain).toEqual(chain);
+  });
+
+  it('root-cause chain is empty when no prerequisites exist', () => {
+    const result = RootCauseResponseSchema.safeParse({
+      weakConceptId: 'w1',
+      chain: [],
+      evidence: undefined,
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.chain).toEqual([]);
+  });
+
+  it('root-cause response includes evidence field', () => {
+    const doc = buildOpenApiDocument();
+    const path = doc.paths?.['/intelligence/root-cause']?.get;
+    expect(path).toBeDefined();
+    expect(path?.responses?.['200']).toBeDefined();
+  });
+});
+
 describe('sign-up validation', () => {
   const valid = {
     email: 'Student@Example.com',
