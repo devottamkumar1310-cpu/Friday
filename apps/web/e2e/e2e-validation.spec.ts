@@ -5,7 +5,6 @@ test.describe.configure({ mode: 'serial' });
 const learner = newLearner('final-validation');
 let context: BrowserContext;
 let page: Page;
-let realGoalId: string;
 
 test.beforeAll(async ({ browser }) => {
   context = await browser.newContext();
@@ -30,10 +29,12 @@ test('Completes the final validation flow', async () => {
   await page.goto('/dashboard');
   await expect(page.getByRole('heading', { level: 1 })).toContainText(/Good to see you|Mission Control/i);
 
-  // Fetch real goal ID from API using browser context (which has session cookies)
-  const apiRes = await context.request.get('/api/v1/goals');
-  const apiJson = await apiRes.json();
-  realGoalId = apiJson.data[0].id;
+  // Fetch real goal ID from API using browser fetch
+  const realGoalId = await page.evaluate(async () => {
+    const res = await fetch('/api/v1/goals');
+    const json = await res.json();
+    return json.data[0].id;
+  });
   expect(realGoalId, 'Real goal ID should be captured').toBeDefined();
 
   // NEXT ACTION & RATIONALE
