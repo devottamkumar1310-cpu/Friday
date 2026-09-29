@@ -8,12 +8,20 @@ export const runtime = 'nodejs';
 /**
  * Nightly cron replan — Phase 4 requirement.
  * Iterates through all users with an active goal and replans them for the new day.
+ *
+ * Security: CRON_SECRET must be set in the environment. There is no dev
+ * fallback — a missing secret is treated as a server misconfiguration (500)
+ * rather than silently allowing access.
  */
 export async function POST(req: Request) {
-  // In a real production system, this would require a cron secret or
-  // Google Cloud Scheduler OIDC token verification.
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) {
+    console.error('CRON_SECRET environment variable is not configured');
+    return NextResponse.json({ error: 'Server misconfiguration' }, { status: 500 });
+  }
+
   const authHeader = req.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET ?? 'cron-secret-dev'}`) {
+  if (authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
