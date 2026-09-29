@@ -11,9 +11,11 @@ import {
 import { CheckCircle2 } from 'lucide-react';
 import { requireUser } from '@/lib/auth/server';
 
+import type { JSX } from 'react';
+
 export const metadata: Metadata = { title: 'Billing & Plan' };
 
-export default async function BillingPage() {
+export default async function BillingPage(): Promise<JSX.Element> {
   await requireUser();
 
   const currentPlan = {
