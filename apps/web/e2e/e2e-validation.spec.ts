@@ -38,17 +38,28 @@ test('Completes the final validation flow', async () => {
   expect(realGoalId, 'Real goal ID should be captured').toBeDefined();
 
   // NEXT ACTION & RATIONALE
-  const startButton = page.getByRole('button', { name: /Start Session/i });
+  const startButton = page.getByRole('link', { name: /Start this now/i });
   await expect(startButton).toBeVisible();
 
   // TASK EXECUTION
   await startButton.click();
   await expect(page).toHaveURL(/\/study\/.+/);
   
-  const completeBtn = page.getByRole('button', { name: /Complete/i });
-  if (await completeBtn.isVisible()) {
-    await completeBtn.click();
+  // The study page has its own start button
+  const studyStartBtn = page.getByRole('button', { name: /Start/i }).first();
+  if (await studyStartBtn.isVisible()) {
+    await studyStartBtn.click();
   }
+
+  // Click "I'm done studying"
+  const doneBtn = page.getByRole('button', { name: /I.m done studying/i });
+  await expect(doneBtn).toBeVisible();
+  await doneBtn.click();
+
+  // Click "Save and finish"
+  const saveBtn = page.getByRole('button', { name: /Save and finish/i });
+  await expect(saveBtn).toBeVisible();
+  await saveBtn.click();
 
   // ADAPTIVE UPDATE & PROGRESS
   await page.goto('/progress');
