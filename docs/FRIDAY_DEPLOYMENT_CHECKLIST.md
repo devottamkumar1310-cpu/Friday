@@ -195,7 +195,7 @@ pnpm db:migrate
 
 ### Vercel Cron Configuration
 
-Add to `vercel.json` or configure in dashboard:
+Configured in `apps/web/vercel.json`:
 
 ```json
 {
