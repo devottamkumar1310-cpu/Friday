@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
+import { PageHeader } from '@friday/ui';
 import { CoachChat } from '@/components/coach/coach-chat';
 import { requireOnboardedUser } from '@/lib/auth/server';
 import { listGoals } from '@/modules/curriculum/curriculum.service';
@@ -22,12 +23,10 @@ export default async function CoachPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Coach</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Grounded in your actual plan and mastery — no context to re-explain.
-        </p>
-      </div>
+      <PageHeader
+        title="Coach"
+        description="Ask about your plan, your progress, or what to do next. Grounded in your actual data — nothing to re-explain."
+      />
 
       <CoachChat
         threadId={thread.id}

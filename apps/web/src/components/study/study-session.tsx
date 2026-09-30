@@ -399,7 +399,7 @@ export function StudySession({
               router.refresh();
             }}
           >
-            See updated plan
+            See what&apos;s next
           </Button>
         </div>
       </div>
@@ -411,7 +411,7 @@ export function StudySession({
     return (
       <div className="space-y-6">
         <div>
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">{taskType}</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{taskType}</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">{taskTitle}</h1>
           <p className="mt-1 text-sm text-muted-foreground">About {estimatedMinutes} minutes</p>
         </div>

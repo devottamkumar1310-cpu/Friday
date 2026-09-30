@@ -98,12 +98,12 @@ test.describe('a learner from sign-up to measurable progress', () => {
     await page.goto('/onboarding/goal');
     await createGoal(page);
 
-    await expect(page.getByRole('heading', { name: /Good to see you/ })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Next action' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await expect(page.getByText('Next mission')).toBeVisible();
 
     // The rationale is deterministic prose from the factor table, so its
     // presence is the visible proof the engine ran — not a placeholder.
-    const start = page.getByRole('link', { name: 'Start this now' });
+    const start = page.getByRole('link', { name: 'Start Session' });
     await expect(start).toBeVisible();
   });
 
@@ -112,9 +112,8 @@ test.describe('a learner from sign-up to measurable progress', () => {
 
     // No longer behind a disclosure. Explaining itself is the one thing FRIDAY
     // does that a to-do list cannot, so it is not something to go looking for.
-    await expect(page.getByText('Why this one')).toBeVisible();
-    await expect(page.getByText('How much it matters')).toBeVisible();
-    await expect(page.getByText('main reason')).toBeVisible();
+    await expect(page.getByText('Why this now')).toBeVisible();
+    await expect(page.getByText('min of focused work')).toBeVisible();
 
     // And the engine's own vocabulary stays inside the engine.
     const body = await page.locator('main').innerText();
@@ -125,7 +124,7 @@ test.describe('a learner from sign-up to measurable progress', () => {
 
   test('completes a study session and sees mastery move', async () => {
     await page.goto('/dashboard');
-    await page.getByRole('link', { name: 'Start this now' }).click();
+    await page.getByRole('link', { name: 'Start Session' }).click();
     await expect(page).toHaveURL(/\/study\//);
 
     await page.getByRole('button', { name: 'Start studying' }).click();
@@ -161,13 +160,13 @@ test.describe('a learner from sign-up to measurable progress', () => {
     // The forward hook: the outcome screen reinforces the behaviour the learner
     // just performed — staying with the session — and the CTA takes them on.
     await expect(page.getByText(/stayed with it|Short counts/i)).toBeVisible();
-    await page.getByRole('button', { name: 'See updated plan' }).click();
+    await page.getByRole('button', { name: "See what's next" }).click();
     await expect(page).toHaveURL(/\/dashboard/, { timeout: 20_000 });
   });
 
   test('refuses a second concurrent session (E-19)', async () => {
     await page.goto('/dashboard');
-    await page.getByRole('link', { name: 'Start this now' }).click();
+    await page.getByRole('link', { name: 'Start Session' }).click();
     await page.getByRole('button', { name: 'Start studying' }).click();
     await expect(page.getByRole('timer')).toBeVisible();
     const studyUrl = page.url();
@@ -240,8 +239,8 @@ test.describe('a learner from sign-up to measurable progress', () => {
 
   test('every navigation destination renders for a real learner', async () => {
     for (const [path, heading] of [
-      ['/dashboard', /Good to see you/],
-      ['/plan', /plan/i],
+      ['/dashboard', /Good (morning|afternoon|evening)/],
+      ['/plan', /study schedule/i],
       ['/practice', /practice/i],
       ['/coach', /coach/i],
       ['/progress', /progress/i],
@@ -256,6 +255,11 @@ test.describe('a learner from sign-up to measurable progress', () => {
 
   test('signs out, and protected pages are no longer reachable', async () => {
     await page.goto('/dashboard');
+    // On mobile the sign-out button lives inside the navigation sheet.
+    const menuButton = page.getByRole('button', { name: /Open menu/i });
+    if (await menuButton.isVisible().catch(() => false)) {
+      await menuButton.click();
+    }
     await page.getByRole('button', { name: /Sign out/i }).click();
     await expect(page).toHaveURL(/\/(sign-in)?$/, { timeout: 20_000 });
 

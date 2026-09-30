@@ -1,13 +1,6 @@
-import { Badge } from '@friday/ui';
-
-/**
- * Weak concepts with their evidence — roadmap 2.2's drill-down half.
- *
- * Every row shows what the claim rests on. A concept flagged weak on one
- * observation is labelled provisional rather than asserted, because "you are
- * weak at this" from a single data point is a guess, and the learner deserves
- * to see which it is (DP6).
- */
+import Link from 'next/link';
+import { Badge, Button } from '@friday/ui';
+import { ArrowRight, BrainCircuit } from 'lucide-react';
 
 export interface WeakConceptView {
   conceptId: string;
@@ -15,7 +8,7 @@ export interface WeakConceptView {
   mastery: number;
   examWeight: number;
   goalId: string;
-  evidence: {
+  evidence?: {
     evidenceCount: number;
     beliefConfidence: number;
     lastEvidenceAt: string | null;
@@ -26,52 +19,52 @@ export interface WeakConceptView {
 export function WeakConceptList({ goalId, concepts }: { goalId: string; concepts: WeakConceptView[] }) {
   if (concepts.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
-        Nothing is flagged weak yet. Weak concepts appear once there is evidence to rank them —
-        studying something is what produces that evidence.
-      </p>
+      <div className="p-8 text-center text-sm text-muted-foreground">
+        FRIDAY needs more evidence to identify weak concepts. Keep studying.
+      </div>
     );
   }
 
   return (
-    <ul className="divide-y divide-border">
+    <div className="divide-y divide-border">
       {concepts.map((concept) => (
-        <li key={concept.conceptId} className="flex items-start justify-between gap-4 py-3">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="truncate text-sm font-medium">{concept.title}</span>
-              {concept.evidence.provisional ? (
-                <Badge variant="outline" className="text-[10px]">
-                  provisional
-                </Badge>
-              ) : null}
-              <a
-                href={`/root-cause?goalId=${goalId}&weakConceptId=${concept.conceptId}`}
-                className="text-[10px] underline underline-offset-2 text-primary hover:text-primary-foreground ml-2"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Root cause
-              </a>
+        <div key={concept.conceptId} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 hover:bg-muted transition-colors">
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2 mb-1">
+              <span className="truncate text-base font-semibold text-foreground">{concept.title}</span>
+              {concept.evidence?.provisional && (
+                <Badge variant="outline" className="text-[10px] bg-background/50">Provisional</Badge>
+              )}
             </div>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {concept.evidence.evidenceCount}{' '}
-              {concept.evidence.evidenceCount === 1 ? 'observation' : 'observations'}
-              {concept.evidence.lastEvidenceAt
-                ? ` · last ${concept.evidence.lastEvidenceAt.slice(0, 10)}`
-                : ''}
-              {` · exam weight ${Math.round(concept.examWeight * 100)}%`}
-            </p>
+            <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+               <span className="flex items-center gap-1 font-mono text-warning">
+                  <BrainCircuit className="size-3" aria-hidden />
+                  {Math.round(concept.mastery * 100)}% Mastery
+                </span>
+               <span className="text-border-strong">•</span>
+               <span>{Math.round(concept.examWeight * 100)}% Exam Weight</span>
+               
+               {concept.evidence && (
+                 <>
+                   <span className="text-border-strong">•</span>
+                   <span>
+                     {concept.evidence.evidenceCount} {concept.evidence.evidenceCount === 1 ? 'observation' : 'observations'}
+                   </span>
+                 </>
+               )}
+            </div>
           </div>
 
-          <div className="shrink-0 text-right">
-            <div className="font-mono text-sm tabular-nums">
-              {Math.round(concept.mastery * 100)}%
-            </div>
-            <div className="text-[11px] text-subtle-foreground">mastery</div>
+          <div className="shrink-0 flex items-center">
+            <Button asChild size="sm" variant="secondary" className="w-full sm:w-auto font-medium">
+              <Link href={`/root-cause?goalId=${goalId}&weakConceptId=${concept.conceptId}`}>
+                Follow the root cause
+                <ArrowRight className="ml-1.5 size-3.5" aria-hidden />
+              </Link>
+            </Button>
           </div>
-        </li>
+        </div>
       ))}
-    </ul>
+    </div>
   );
 }

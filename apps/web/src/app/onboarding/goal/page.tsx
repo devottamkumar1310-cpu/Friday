@@ -27,31 +27,48 @@ export default async function GoalPage() {
   const templates = await listTemplates();
 
   return (
-    <main id="main" className="mx-auto max-w-2xl px-6 py-12">
-      <div className="mb-8">
-        <p className="text-sm font-medium text-primary">Step 2 of 2</p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-          What are you working towards?
-        </h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          FRIDAY plans backwards from your deadline and forwards from what you know. Both answers
-          below can be changed later.
-        </p>
-      </div>
+    <main id="main" className="min-h-dvh bg-background flex items-start justify-center px-6 py-16">
+      <div className="w-full max-w-2xl">
+        {/* Progress */}
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Setting up your system
+            </span>
+            <span className="text-xs text-muted-foreground">— Step 2 of 2</span>
+          </div>
+          <div className="flex gap-1.5">
+            <div className="h-1 flex-1 rounded-full bg-primary" />
+            <div className="h-1 flex-1 rounded-full bg-primary" />
+          </div>
+        </div>
 
-      <GoalForm
-        // Single source of truth. The form used to ask for weekly hours again
-        // and default to "10 hours a week", which silently contradicted the
-        // availability the learner had just set on the previous screen.
-        weeklyMinutes={weeklyMinutes(availability.rules)}
-        templates={templates.map((t) => ({
-          id: t.id,
-          slug: t.slug,
-          title: t.title,
-          examBoard: t.examBoard,
-          region: t.region,
-        }))}
-      />
+        {/* Header */}
+        <div className="mb-10 space-y-3">
+          <h1 className="text-3xl font-semibold tracking-tight">What are you working towards?</h1>
+          <p className="text-base text-muted-foreground leading-relaxed max-w-lg">
+            FRIDAY plans backwards from your deadline and forwards from what you know.
+          </p>
+          <p className="text-sm text-subtle-foreground bg-surface border border-border rounded-lg px-4 py-3">
+            <strong className="text-foreground">Why this matters:</strong> Your exam date and curriculum determine
+            how FRIDAY allocates urgency. Both can be changed later.
+          </p>
+        </div>
+
+        <GoalForm
+          // Single source of truth. The form used to ask for weekly hours again
+          // and default to "10 hours a week", which silently contradicted the
+          // availability the learner had just set on the previous screen.
+          weeklyMinutes={weeklyMinutes(availability.rules)}
+          templates={templates.map((t) => ({
+            id: t.id,
+            slug: t.slug,
+            title: t.title,
+            examBoard: t.examBoard,
+            region: t.region,
+          }))}
+        />
+      </div>
     </main>
   );
 }

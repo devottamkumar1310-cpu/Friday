@@ -35,6 +35,9 @@ const PROTECTED = [
   '/progress',
   '/coach',
   '/study',
+  '/root-cause',
+  '/weekly-review',
+  '/mock-test',
 ];
 
 export function middleware(req: NextRequest) {
@@ -92,7 +95,7 @@ function contentSecurityPolicy(nonce: string): string {
   return [
     "default-src 'self'",
     // `unsafe-eval` only in development, where React Refresh needs it.
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${development ? " 'unsafe-eval'" : ''}`,
+    `script-src 'self' 'nonce-${nonce}' 'sha256-GZNLe3zvH265FG6Uol68TGcST9ozMjqW+5ZkjFlhYjM=' 'strict-dynamic'${development ? " 'unsafe-eval'" : ''}`,
     // Tailwind emits a stylesheet, but Next still inlines critical CSS and
     // React sets styles on elements, so style-src cannot be nonce-only here.
     "style-src 'self' 'unsafe-inline'",

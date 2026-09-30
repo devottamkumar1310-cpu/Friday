@@ -28,12 +28,12 @@ export function DeleteAccountButton() {
 
   if (confirming) {
     return (
-      <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 space-y-3">
-        <div className="flex items-start gap-3 text-red-700 dark:text-red-400">
+      <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 space-y-3">
+        <div className="flex items-start gap-3 text-destructive">
           <AlertTriangle className="size-5 shrink-0 mt-0.5" />
           <div className="space-y-1 text-sm">
             <p className="font-semibold">Are you absolutely sure?</p>
-            <p className="text-xs text-red-600 dark:text-red-300">
+            <p className="text-xs text-muted-foreground">
               This action cannot be undone. All your goals, study sessions, learning progress, and
               personal data will be permanently removed.
             </p>

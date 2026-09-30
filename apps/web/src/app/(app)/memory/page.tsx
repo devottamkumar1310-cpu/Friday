@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { Brain } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState } from '@friday/ui';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, PageHeader } from '@friday/ui';
 import { requireOnboardedUser } from '@/lib/auth/server';
 import { listGoals } from '@/modules/curriculum/curriculum.service';
 import {
@@ -29,13 +29,11 @@ export default async function MemoryPage() {
   const studied = mastery.filter((m) => m.evidenceCount > 0);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Memory</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          What FRIDAY knows about your knowledge, and what it believes about you.
-        </p>
-      </div>
+    <div className="space-y-8">
+      <PageHeader
+        title="Memory"
+        description="What FRIDAY knows about your knowledge, and what it believes about you. Every belief carries its evidence — correct anything wrong."
+      />
 
       <Card>
         <CardHeader>

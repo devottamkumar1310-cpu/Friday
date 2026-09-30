@@ -2,6 +2,7 @@ import * as React from 'react';
 import { AlertTriangle, Inbox } from 'lucide-react';
 import { cn } from '../lib/cn';
 import { Button } from './button';
+import { Skeleton, SkeletonText } from './skeleton';
 
 /**
  * Empty and error states.
@@ -16,7 +17,7 @@ export interface EmptyStateProps {
   title: string;
   description?: string;
   icon?: React.ReactNode;
-  action?: { label: string; onClick: () => void };
+  action?: { label: string; onClick?: () => void; href?: string };
   className?: string;
 }
 
@@ -38,8 +39,17 @@ export function EmptyState({ title, description, icon, action, className }: Empt
         )}
       </div>
       {action && (
-        <Button size="sm" onClick={action.onClick} className="mt-1">
-          {action.label}
+        <Button
+          size="sm"
+          onClick={action.onClick}
+          className="mt-1"
+          {...(action.href ? ({ asChild: true } as const) : {})}
+        >
+          {action.href && !action.onClick ? (
+            <a href={action.href}>{action.label}</a>
+          ) : (
+            action.label
+          )}
         </Button>
       )}
     </div>
@@ -85,6 +95,38 @@ export function ErrorState({
       {requestId && (
         <p className="font-mono text-xs text-subtle-foreground">Reference: {requestId}</p>
       )}
+    </div>
+  );
+}
+
+/**
+ * LoadingState — layout-preserving skeleton for async surfaces.
+ *
+ * Complements Skeleton/SkeletonText with a labelled region so every major
+ * screen can share one loading pattern: preserve layout, announce via
+ * aria-busy, never a bare spinner. Additive only; existing `loading.tsx`
+ * files are untouched.
+ */
+export function LoadingState({
+  title = 'Loading',
+  lines = 3,
+  className,
+}: {
+  title?: string;
+  lines?: number;
+  className?: string;
+}) {
+  return (
+    <div
+      role="status"
+      aria-busy="true"
+      aria-label={title}
+      className={cn('space-y-4', className)}
+    >
+      <span className="sr-only">{title}…</span>
+      <Skeleton className="h-8 w-64 max-w-full" />
+      <SkeletonText lines={lines} />
+      <Skeleton className="h-44 w-full" />
     </div>
   );
 }

@@ -68,9 +68,9 @@ export default async function DashboardPage() {
    * left the learner to notice the discrepancy; the panel shows one action, so
    * the count below simply excludes it.
    */
-  const remainingToday = mission.today.tasks.filter(
+  const remainingTasks = mission.today.tasks.filter(
     (t) => t.status !== 'completed' && t.id !== action?.taskId,
-  ).length;
+  );
 
   return (
     <LiveIntelligencePanel
@@ -103,7 +103,7 @@ export default async function DashboardPage() {
             }
           : null
       }
-      remainingToday={remainingToday}
+      todayTasks={remainingTasks}
     />
   );
 }

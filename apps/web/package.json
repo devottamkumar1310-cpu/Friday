@@ -23,6 +23,7 @@
     "@friday/ui": "workspace:*",
     "@hookform/resolvers": "^3.10.0",
     "@node-rs/argon2": "^2.0.2",
+    "@revenuecat/purchases-js": "^1.66.0",
     "@sentry/nextjs": "^8.47.0",
     "@tanstack/react-query": "^5.62.11",
     "lucide-react": "^0.469.0",
