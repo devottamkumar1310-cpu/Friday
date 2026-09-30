@@ -37,7 +37,7 @@ export function SignUpForm() {
     setFormError(null);
     try {
       await api.call('signUp', { body: values });
-      router.push('/dashboard');
+      router.push('/onboarding/availability');
       router.refresh();
     } catch (error) {
       if (!(error instanceof ApiClientError)) {

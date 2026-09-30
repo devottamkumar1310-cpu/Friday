@@ -84,7 +84,7 @@ export function AppSidebar({ userDisplayName }: { userDisplayName: string }) {
         </button>
       </div>
 
-      <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
+      <nav aria-label="Main" className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
         {GROUPS.map((group) => (
           <div key={group.label}>
             <div className="px-3 mb-2 text-xs font-semibold text-muted-foreground tracking-wider">

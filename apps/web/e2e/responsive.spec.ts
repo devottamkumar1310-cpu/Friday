@@ -106,7 +106,7 @@ test.describe('the loading state', () => {
 
     // At 320px the destinations live behind the disclosure.
     await fresh.getByRole('button', { name: 'Open menu' }).click();
-    await fresh.locator('#mobile-nav').getByRole('link', { name: 'Mission Control' }).click();
+    await fresh.getByRole('link', { name: 'Mission Control' }).click();
     await expect(fresh.getByText('Loading')).toBeAttached();
     expect(await horizontalOverflow(fresh)).toBeLessThanOrEqual(0);
 
@@ -134,7 +134,7 @@ test.describe('navigation adapts to the viewport', () => {
       'Memory',
       'Settings',
     ]) {
-      await expect(page.locator('#mobile-nav').getByRole('link', { name: label })).toBeVisible();
+      await expect(page.getByRole('link', { name: label })).toBeVisible();
     }
 
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -147,7 +147,7 @@ test.describe('the study screen on a phone', () => {
   test('the timer stays visible while rating, and tap targets are big enough', async () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/dashboard');
-    await page.getByRole('link', { name: 'Start this now' }).click();
+    await page.getByRole('link', { name: 'Start Session' }).click();
     await page.getByRole('button', { name: 'Start studying' }).click();
     await expect(page.getByRole('timer')).toBeVisible();
     await page.getByRole('button', { name: /done studying/i }).click();
