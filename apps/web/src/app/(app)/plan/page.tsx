@@ -1,40 +1,32 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { CalendarDays } from 'lucide-react';
-import {
-  Badge,
-  Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  Callout,
-  EmptyState,
-} from '@friday/ui';
+import { CalendarDays, Info, PlayCircle } from 'lucide-react';
+import { Button, EmptyState } from '@friday/ui';
+import { PageHeader } from '@friday/ui';
 import { requireOnboardedUser } from '@/lib/auth/server';
 import { getAdaptiveProfile } from '@/modules/adaptive/adaptive.service';
 import { listGoals } from '@/modules/curriculum/curriculum.service';
 import { getSchedule, hydrateTasksWithConcepts } from '@/modules/planning/planning.service';
 import { RegeneratePlanButton } from '@/components/planning/regenerate-plan-button';
-
+import { AdaptationCard } from '@/components/friday/intelligence';
 
 export const metadata: Metadata = { title: 'Plan' };
 
-const TYPE_TONE: Record<string, 'primary' | 'success' | 'neutral'> = {
-  learn: 'primary',
-  revise: 'success',
-  practice: 'neutral',
+const TYPE_TONE: Record<string, string> = {
+  learn: 'text-primary bg-primary/10 border-primary/20',
+  revise: 'text-success bg-success/10 border-success/20',
+  practice: 'text-muted-foreground bg-muted border-border',
 };
 
-function formatDay(date: string): { weekday: string; label: string; isToday: boolean } {
+function formatDay(date: string): { weekday: string; label: string; isToday: boolean; isPast: boolean } {
   const today = new Date().toISOString().slice(0, 10);
   const d = new Date(`${date}T00:00:00Z`);
   return {
     weekday: d.toLocaleDateString('en', { weekday: 'long', timeZone: 'UTC' }),
     label: d.toLocaleDateString('en', { day: 'numeric', month: 'short', timeZone: 'UTC' }),
     isToday: date === today,
+    isPast: date < today,
   };
 }
 
@@ -44,9 +36,6 @@ export default async function PlanPage() {
   const goal = goals.find((g) => g.status === 'active') ?? goals[0];
   if (!goal) redirect('/onboarding/availability');
 
-  // Load adaptive profile in parallel with the schedule so it costs no extra
-  // serial latency. The profile is derived from session history — no extra
-  // query touches the schedule tables.
   let plan;
   let tasks;
   let profile;
@@ -61,16 +50,15 @@ export default async function PlanPage() {
   } catch {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Plan</h1>
-        <Card>
-          <CardContent className="pt-6">
-            <EmptyState
-              icon={<CalendarDays className="size-8" />}
-              title="No plan yet"
-              description="Generate a plan to see your schedule."
-            />
-          </CardContent>
-        </Card>
+        <PageHeader
+          title="Your study schedule"
+          description="What FRIDAY planned for you, and why it changed."
+        />
+        <EmptyState
+          icon={<CalendarDays className="size-8" />}
+          title="No plan yet"
+          description="Generate a plan to see your adaptive schedule."
+        />
       </div>
     );
   }
@@ -83,166 +71,179 @@ export default async function PlanPage() {
   }
   const days = [...byDate.entries()].sort(([a], [b]) => (a < b ? -1 : 1));
 
+  const diffSummary = plan.diffSummary as {
+    rescheduledCount?: number;
+    capacityBefore?: number;
+    capacityAfter?: number;
+    reasoning?: string;
+  } | null;
+
   const projection = (plan.projection ?? []) as {
     week: string;
     conceptIds: string[];
     plannedMinutes: number;
   }[];
 
-  // What the last re-plan did. Only shown when the plan row records it.
-  const diffSummary = plan.diffSummary as {
-    rescheduledCount?: number;
-    capacityBefore?: number;
-    capacityAfter?: number;
-  } | null;
+  const sizingNote =
+    profile.band === 'struggling'
+      ? `Adjusting to keep you moving. Sessions are currently sized to ${profile.targetSessionMinutes} minutes to build momentum.`
+      : profile.band === 'thriving'
+        ? `Pushing you harder. Sessions are currently sized to ${profile.targetSessionMinutes} minutes because you have room.`
+        : `Holding your plan steady. Sessions are currently sized to ${profile.targetSessionMinutes} minutes based on your pace.`;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Plan</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {goal.title} · version {plan.version} · {plan.windowStart} to {plan.windowEnd}
-          </p>
-        </div>
-        <RegeneratePlanButton goalId={goal.id} />
-      </div>
+    <div className="space-y-10">
+      <PageHeader
+        eyebrow={goal.title}
+        title="Your study schedule"
+        description={`Detailed for ${plan.windowStart} to ${plan.windowEnd}. FRIDAY keeps the next fortnight precise and everything beyond it as a rough outline.`}
+        actions={<RegeneratePlanButton goalId={goal.id} />}
+      />
 
-      {/* Adaptive context — the same intelligence the dashboard leads with,
-          here as a brief statement before the list. Omitted when the engine
-          has not yet formed a view (band === 'unknown'). */}
-      {profile.band !== 'unknown' && (
-        <Callout tone="info" title="How FRIDAY sized this plan">
-          {profile.band === 'struggling'
-            ? `Adjusting to keep you moving. Sessions are currently sized to ${profile.targetSessionMinutes} minutes to build momentum.`
-            : profile.band === 'thriving'
-              ? `Pushing you harder. Sessions are currently sized to ${profile.targetSessionMinutes} minutes because you have room.`
-              : `Holding your plan steady. Sessions are currently sized to ${profile.targetSessionMinutes} minutes based on your pace.`}
-        </Callout>
-      )}
-
-      {/* What the last re-plan redistributed, if anything was moved. */}
-      {diffSummary?.rescheduledCount != null && diffSummary.rescheduledCount > 0 && (
-        <Callout tone="info" title="What changed in this version">
-          {diffSummary.rescheduledCount} task
-          {diffSummary.rescheduledCount === 1 ? '' : 's'} rescheduled
-          {diffSummary.capacityBefore != null && diffSummary.capacityAfter != null
-            ? ` · available time moved from ${diffSummary.capacityBefore}h to ${diffSummary.capacityAfter}h`
-            : ''}
-          .
-        </Callout>
-      )}
-
-      {/* §4.3: a plan version materialises 14 days and projects the rest. Saying
-          so plainly prevents the reasonable assumption that the rest is missing. */}
-      <Callout tone="info" title="Why only two weeks?">
-        FRIDAY schedules the next fortnight in detail and keeps everything beyond it as a coarse
-        projection. Planning day 217 to the minute would be false precision — it rolls forward as
-        you go.
-      </Callout>
-
-      {days.length === 0 ? (
-        <Card>
-          <CardContent className="pt-6">
-            <EmptyState
-              icon={<CalendarDays className="size-8" />}
-              title="Nothing scheduled in this window"
-              description="Regenerate the plan, or add study hours in settings."
+      {/* What FRIDAY changed — before → now + reason. */}
+      {(diffSummary?.rescheduledCount || profile.band !== 'unknown') && (
+        <div className="space-y-3">
+          {diffSummary?.rescheduledCount ? (
+            <AdaptationCard
+              statement={`FRIDAY rescheduled ${diffSummary.rescheduledCount} task${diffSummary.rescheduledCount === 1 ? '' : 's'} to protect exam-critical work.`}
+              before={
+                diffSummary.capacityBefore != null
+                  ? `${diffSummary.capacityBefore}h available`
+                  : undefined
+              }
+              now={
+                diffSummary.capacityAfter != null
+                  ? `${diffSummary.capacityAfter}h available`
+                  : undefined
+              }
+              reason={
+                diffSummary.reasoning ??
+                'Preserve exam-weighted work while keeping workload feasible.'
+              }
             />
-          </CardContent>
-        </Card>
-      ) : (
-        <ol className="space-y-4">
-          {days.map(([date, items]) => {
-            const { weekday, label, isToday } = formatDay(date);
-            const minutes = items.reduce((s, i) => s + i.task.estimatedMinutes, 0);
-            return (
-              <li key={date}>
-                <Card className={isToday ? 'border-primary/40' : undefined}>
-                  <CardHeader>
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <CardTitle className="text-base">
-                        {weekday} {label}
-                        {isToday ? (
-                          <Badge variant="primary" className="ml-2">
-                            Today
-                          </Badge>
-                        ) : null}
-                      </CardTitle>
-                      <span className="text-sm text-muted-foreground">{minutes} min</span>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <ul className="divide-y divide-border">
-                      {items.map(({ task, concepts }) => (
-                        <li
-                          key={task.id}
-                          className="flex flex-wrap items-center justify-between gap-3 py-2.5"
-                        >
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge variant={TYPE_TONE[task.type] ?? 'neutral'}>{task.type}</Badge>
-                              <span className="truncate text-sm font-medium">{task.title}</span>
-                              {task.status === 'completed' ? (
-                                <Badge variant="success">done</Badge>
-                              ) : null}
-                              {task.status === 'skipped' ? (
-                                <Badge variant="outline">skipped</Badge>
-                              ) : null}
-                            </div>
-                            {concepts.length > 0 ? (
-                              <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                                {concepts.map((c) => c.title).join(', ')}
-                              </p>
-                            ) : null}
-                          </div>
-                          <div className="flex shrink-0 items-center gap-3">
-                            <span className="text-xs text-muted-foreground">
-                              {task.estimatedMinutes} min
-                            </span>
-                            {task.status === 'pending' ? (
-                              // 44px minimum: `size="sm"` rendered these at 32px,
-                              // and there are ten of them stacked on a phone.
-                              <Button size="sm" variant="secondary" asChild className="h-11 px-4">
-                                <Link href={`/study/${task.id}`}>Study</Link>
-                              </Button>
-                            ) : null}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
-                </Card>
-              </li>
-            );
-          })}
-        </ol>
+          ) : null}
+          {profile.band !== 'unknown' && (
+            <p className="rounded-xl border border-border bg-surface px-5 py-4 text-sm leading-relaxed text-muted-foreground">
+              <span className="font-medium text-foreground">Session sizing — </span>
+              {sizingNote}
+            </p>
+          )}
+        </div>
       )}
+
+      <section aria-label="Upcoming schedule">
+        {days.length === 0 ? (
+          <EmptyState
+            title="Nothing scheduled in this window"
+            description="Regenerate the plan, or add study hours in settings so FRIDAY has time to work with."
+          />
+        ) : (
+          <ol className="relative space-y-10 before:absolute before:inset-y-0 before:left-4 before:w-px before:bg-border md:before:left-1/2">
+            {days.map(([date, dateTasks]) => {
+              const { weekday, label, isToday, isPast } = formatDay(date);
+
+              if (isPast) return null; // Hide past schedules completely to reduce anxiety.
+
+              return (
+                <li key={date} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse">
+                  {/* Timeline dot */}
+                  <div
+                    className={`absolute left-4 h-3 w-3 -translate-x-1/2 rounded-full border-2 md:left-1/2 ${isToday ? 'border-background bg-primary' : 'border-border bg-surface'}`}
+                    aria-hidden
+                  />
+
+                  <div className="w-full pl-12 md:w-5/12 md:pl-0 md:group-odd:text-right">
+                    <div className="mb-3">
+                      <p className={`text-sm font-bold ${isToday ? 'text-primary' : 'text-foreground'}`}>
+                        {isToday ? 'TODAY' : weekday.toUpperCase()}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{label}</p>
+                    </div>
+
+                    <div className="space-y-3">
+                      {dateTasks.map((item) => (
+                        <article
+                          key={item.task.id}
+                          className={`rounded-xl border bg-surface-raised p-4 transition-colors hover:border-border-strong ${item.task.status === 'completed' ? 'opacity-60' : 'border-border'}`}
+                        >
+                          <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                            <span
+                              className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${TYPE_TONE[item.task.type] ?? TYPE_TONE.practice}`}
+                            >
+                              {item.task.type}
+                            </span>
+                            <span className="shrink-0 rounded-md bg-background px-2 py-1 text-xs font-medium tabular-nums text-muted-foreground">
+                              {item.task.estimatedMinutes} min
+                            </span>
+                          </div>
+
+                          <h3 className="mb-1 truncate text-sm font-semibold text-foreground" title={item.task.title}>
+                            {item.task.title}
+                          </h3>
+
+                          {item.task.status === 'completed' ? (
+                            <p className="mt-3 text-xs font-semibold text-success">Completed</p>
+                          ) : (
+                            <div className="mt-4 flex justify-end border-t border-border pt-4">
+                              <Button asChild variant="secondary" size="sm">
+                                <Link href={`/study/${item.task.id}`} prefetch>
+                                  <PlayCircle className="mr-1.5 size-3.5" aria-hidden /> Start
+                                </Link>
+                              </Button>
+                            </div>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </section>
 
       {projection.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Beyond the window</CardTitle>
-            <CardDescription>
-              Week-level projection to your target date. It becomes a real schedule as the window
-              rolls forward.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="divide-y divide-border text-sm">
-              {projection.slice(0, 12).map((week) => (
-                <li key={week.week} className="flex items-center justify-between gap-3 py-2">
-                  <span className="font-mono text-xs">{week.week}</span>
-                  <span className="text-muted-foreground">
-                    {week.conceptIds.length} concept{week.conceptIds.length === 1 ? '' : 's'} ·{' '}
-                    {week.plannedMinutes} min
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+        <section aria-label="Beyond this window" className="space-y-4 border-t border-border pt-8">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Beyond this window
+          </h2>
+          <div className="overflow-hidden rounded-xl border border-border bg-surface">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-border bg-muted/50 text-xs text-muted-foreground">
+                <tr>
+                  <th scope="col" className="px-4 py-3 font-medium">Week commencing</th>
+                  <th scope="col" className="px-4 py-3 font-medium">Focus</th>
+                  <th scope="col" className="px-4 py-3 text-right font-medium">Budget</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {projection.slice(0, 12).map((week) => (
+                  <tr key={week.week}>
+                    <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{week.week}</td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {week.conceptIds.length} concept{week.conceptIds.length === 1 ? '' : 's'}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {Math.round(week.plannedMinutes / 60)}h
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
+
+      <div className="pt-4 text-center">
+        <p className="mb-2 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+          <Info className="size-3.5" aria-hidden /> Why only two weeks?
+        </p>
+        <p className="mx-auto max-w-lg text-xs leading-relaxed text-subtle-foreground">
+          FRIDAY schedules the next fortnight in detail and keeps everything beyond it as a
+          coarse projection. Planning day 217 to the minute would be false precision.
+        </p>
+      </div>
     </div>
   );
 }

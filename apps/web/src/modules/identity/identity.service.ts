@@ -118,6 +118,66 @@ export async function signIn(input: SignInRequest, meta: RequestMeta): Promise<A
   return issueSession(user, meta);
 }
 
+export interface GoogleAuthInput {
+  providerAccountId: string;
+  email: string;
+  displayName: string;
+  avatarUrl?: string | null;
+}
+
+export async function signInWithGoogle(
+  input: GoogleAuthInput,
+  meta: RequestMeta,
+): Promise<AuthResult> {
+  const db = getDb();
+  const users = usersRepository(db);
+
+  // 1. Check if user linked via provider account ID
+  let user = await users.findByProviderAccountForAuth('google', input.providerAccountId);
+
+  if (!user) {
+    // 2. Check if user exists by email
+    const existingByEmail = await users.findByEmailForAuth(input.email);
+
+    if (existingByEmail) {
+      user = existingByEmail;
+      await users.linkAccount({
+        userId: user.id,
+        provider: 'google',
+        providerAccountId: input.providerAccountId,
+      });
+      if (!user.emailVerifiedAt) {
+        await users.markEmailVerified(user.id);
+      }
+    } else {
+      // 3. Create new user for Google login
+      user = await db.transaction(async (tx) => {
+        const created = await usersRepository(tx).create({
+          email: input.email,
+          displayName: input.displayName || 'Learner',
+          avatarUrl: input.avatarUrl ?? null,
+          emailVerifiedAt: new Date(),
+          onboardingState: {
+            step: 'date_of_birth',
+            completed: false,
+          },
+        });
+        await usersRepository(tx).linkAccount({
+          userId: created.id,
+          provider: 'google',
+          providerAccountId: input.providerAccountId,
+        });
+        await preferencesRepository(tx).ensureDefaults(created.id);
+        return created;
+      });
+      trackEvent(user.id, EVENTS.signedUp, { provider: 'google' });
+    }
+  }
+
+  setContextUser(user.id);
+  return issueSession(user, meta);
+}
+
 export async function signOut(token: string): Promise<void> {
   await authSessionsRepository(getDb()).deleteByTokenHash(hashSessionToken(token));
 }

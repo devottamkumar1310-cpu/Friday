@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import { PageHeader } from '@friday/ui';
 import { requireUser } from '@/lib/auth/server';
 import { listGoals, getGraph } from '@/modules/curriculum/curriculum.service';
 import { MockTestStarter } from './mock-test-starter';
@@ -7,7 +8,7 @@ export default async function MockTestPage() {
   const user = await requireUser();
   const goals = await listGoals(user);
   const goal = goals.find((g) => g.status === 'active') ?? goals[0];
-  
+
   if (!goal) {
     notFound();
     return;
@@ -17,15 +18,14 @@ export default async function MockTestPage() {
   const conceptIds = concepts.map(c => c.id);
 
   return (
-    <main className="mx-auto max-w-2xl px-6 py-12 space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Mock Test</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Take a full-length mock exam to evaluate your overall readiness.
-        </p>
-      </div>
+    <div className="mx-auto max-w-2xl space-y-8">
+      <PageHeader
+        eyebrow={goal.title}
+        title="Mock test"
+        description="A full-length exam across your entire curriculum. Treat it like the real thing — FRIDAY learns from every answer."
+      />
 
       <MockTestStarter goalId={goal.id} conceptIds={conceptIds} />
-    </main>
+    </div>
   );
 }

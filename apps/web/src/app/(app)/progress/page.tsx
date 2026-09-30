@@ -1,14 +1,7 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { TrendingUp } from 'lucide-react';
-import {
-  Badge,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  EmptyState,
-} from '@friday/ui';
+import { Button, EmptyState, PageHeader } from '@friday/ui';
 import { requireOnboardedUser } from '@/lib/auth/server';
 import { listGoals } from '@/modules/curriculum/curriculum.service';
 import {
@@ -20,17 +13,24 @@ import { getFeasibility } from '@/modules/planning/planning.service';
 import { ProgressRing } from '@/components/progress/progress-ring';
 import { WeakConceptList } from '@/components/progress/weak-concept-list';
 import { FeasibilityRemediation } from '@/components/planning/feasibility-remediation';
+import { MomentumMetric, MomentumSparkline } from '@/components/friday/momentum';
 
 export const metadata: Metadata = { title: 'Progress' };
 
 /**
- * Progress page — roadmap 2.11 (ring, weak list, trend) and 2.3 (feasibility
- * remediation).
- *
- * An RSC that calls services directly (§4.1): the page is data-dense and barely
- * interactive, so server-rendering the whole frame beats shipping a client
- * fetch waterfall.
+ * Feasibility answers "does the remaining work fit the time I have?".
+ * Velocity (below) answers "am I moving fast enough?". They are different
+ * computations and can disagree on a brand-new learner, so each is stated in
+ * its own terms rather than sharing the word "track".
  */
+const VERDICT_LINE: Record<string, string> = {
+  on_track:
+    'The work left fits the time you have. This is a feasibility verdict, not a grade.',
+  at_risk: 'The plan needs attention — the options below show exactly how to fix it.',
+  not_feasible:
+    'The current deadline does not fit the remaining work. The options below show your three levers.',
+};
+
 export default async function ProgressPage() {
   const user = await requireOnboardedUser();
   const goals = await listGoals(user);
@@ -39,16 +39,15 @@ export default async function ProgressPage() {
   if (!goal) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Progress</h1>
-        <Card>
-          <CardContent className="pt-6">
-            <EmptyState
-              icon={<TrendingUp className="size-8" />}
-              title="No goal yet"
-              description="Progress appears once you have a goal and a plan to measure against."
-            />
-          </CardContent>
-        </Card>
+        <PageHeader
+          title="Your learning progress"
+          description="Mastery, retention, and what FRIDAY thinks you should fix next."
+        />
+        <EmptyState
+          icon={<TrendingUp className="size-8" />}
+          title="No goal yet"
+          description="Progress appears once you have a goal and a plan to measure against."
+        />
       </div>
     );
   }
@@ -66,80 +65,137 @@ export default async function ProgressPage() {
     declining: 'behind the pace you need',
   }[progress.velocity.trend];
 
+  const masteredDelta =
+    trends.length >= 2
+      ? trends[trends.length - 1]!.conceptsMastered - trends[0]!.conceptsMastered
+      : 0;
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Progress</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{goal.title}</p>
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-[auto_1fr]">
-        <Card className="grid place-items-center p-6">
-          <ProgressRing value={progress.weightedProgress} label="weighted" />
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Where you stand</CardTitle>
-            <CardDescription>
-              Progress is weighted by exam importance and adjusted for what you have forgotten — not
-              a count of finished tasks.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
-            <Stat
-              label="Concepts mastered"
-              value={`${progress.conceptsMastered} / ${progress.conceptsTotal}`}
-            />
-            <Stat label="In progress" value={String(progress.conceptsInProgress)} />
-            <Stat label="Not started" value={String(progress.conceptsNotStarted)} />
-            <Stat label="Days remaining" value={String(progress.daysRemaining)} />
-            <Stat label="Due for review" value={String(progress.retentionHealth.dueNow)} />
-            <Stat
-              label="At risk of loss"
-              value={String(progress.retentionHealth.atRisk)}
-              hint={
-                progress.retentionHealth.overdue > 0
-                  ? `${progress.retentionHealth.overdue} overdue`
-                  : undefined
-              }
-            />
-          </CardContent>
-        </Card>
-      </div>
-
-      <FeasibilityRemediation
-        feasibility={{
-          verdict: feasibility.feasibility.verdict,
-          requiredMinutes: Math.round(feasibility.feasibility.requiredMinutes),
-          availableMinutes: Math.round(feasibility.feasibility.availableMinutes),
-          slackMinutes: Math.round(feasibility.feasibility.slackMinutes),
-          slackPercent: feasibility.feasibility.slackFraction * 100,
-          projectedCompletionDate: feasibility.feasibility.projectedCompletionDate,
-          confidenceIntervalDays: feasibility.feasibility.confidenceIntervalDays,
-          remediationOptions: feasibility.remediationOptions.map((o) => ({
-            type: o.type,
-            detail: o.detail,
-            impact: {
-              verdict: o.impact.verdict,
-              ...(o.impact.slackPercent !== undefined
-                ? { slackPercent: o.impact.slackPercent }
-                : {}),
-            },
-          })),
-        }}
+    <div className="space-y-10">
+      <PageHeader
+        eyebrow={goal.title}
+        title="Your learning progress"
+        description="Mastery, retention, and what FRIDAY thinks you should fix next."
+        actions={
+          weakConcepts.length > 0 ? (
+            <Button asChild>
+              <Link href="/practice">Practise weak concepts</Link>
+            </Button>
+          ) : undefined
+        }
       />
 
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Weakest concepts</CardTitle>
-            <CardDescription>
-              Ranked by what it costs to leave them weak — exam weight, how far off you are, and how
-              much else depends on them.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+      {/* Overall learning state — exam-weighted readiness, not task counts. */}
+      <section
+        aria-label="Where you stand"
+        className="animate-enter rounded-xl border border-border bg-surface-raised p-6 md:p-8"
+      >
+        <div className="flex flex-col items-center gap-8 lg:flex-row lg:items-stretch">
+          <div className="flex shrink-0 items-center justify-center">
+            <ProgressRing value={progress.weightedProgress} label="Mastered" />
+          </div>
+
+          <div className="flex flex-1 flex-col justify-center gap-6">
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight text-foreground">
+                Where you stand
+              </h2>
+              <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">
+                Weighted by exam importance and adjusted for memory decay — your actual
+                readiness, not completed tasks.{' '}
+                {VERDICT_LINE[progress.verdict] ?? ''}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-6 border-t border-border pt-6 md:grid-cols-3">
+              <MomentumMetric
+                eyebrow="Mastered"
+                value={`${progress.conceptsMastered} / ${progress.conceptsTotal}`}
+              />
+              <MomentumMetric eyebrow="In progress" value={String(progress.conceptsInProgress)} />
+              <MomentumMetric eyebrow="Not started" value={String(progress.conceptsNotStarted)} />
+              <MomentumMetric eyebrow="Days left" value={String(progress.daysRemaining)} />
+              <MomentumMetric
+                eyebrow="Due for review"
+                value={String(progress.retentionHealth.dueNow)}
+              />
+              <MomentumMetric
+                eyebrow="At risk"
+                value={String(progress.retentionHealth.atRisk)}
+                caption={
+                  progress.retentionHealth.overdue > 0
+                    ? `${progress.retentionHealth.overdue} overdue`
+                    : undefined
+                }
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Momentum — velocity in words plus the recorded line. */}
+      <section aria-label="Momentum" className="animate-enter space-y-3" style={{ ['--enter-delay' as string]: '60ms' }}>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          Momentum
+        </h2>
+        <div className="flex flex-col gap-6 rounded-xl border border-border bg-surface p-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="max-w-md space-y-1">
+            <p className="text-sm font-medium text-foreground">
+              Your recent pace is {trendCopy}.
+            </p>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {masteredDelta > 0
+                ? `${masteredDelta} more concept${masteredDelta === 1 ? '' : 's'} mastered across your recorded days.`
+                : 'Mastery grows as you complete sessions and reviews.'}
+            </p>
+          </div>
+          <MomentumSparkline
+            points={trends.map((t) => ({ date: t.date, weightedProgress: t.weightedProgress }))}
+          />
+        </div>
+      </section>
+
+      {feasibility.feasibility.verdict !== 'on_track' && (
+        <section aria-label="Get back on track">
+          <FeasibilityRemediation
+            feasibility={{
+              verdict: feasibility.feasibility.verdict,
+              requiredMinutes: Math.round(feasibility.feasibility.requiredMinutes),
+              availableMinutes: Math.round(feasibility.feasibility.availableMinutes),
+              slackMinutes: Math.round(feasibility.feasibility.slackMinutes),
+              slackPercent: feasibility.feasibility.slackFraction * 100,
+              projectedCompletionDate: feasibility.feasibility.projectedCompletionDate,
+              confidenceIntervalDays: feasibility.feasibility.confidenceIntervalDays,
+              remediationOptions: feasibility.remediationOptions.map((o) => ({
+                type: o.type,
+                detail: o.detail,
+                impact: {
+                  verdict: o.impact.verdict,
+                  ...(o.impact.slackPercent !== undefined
+                    ? { slackPercent: o.impact.slackPercent }
+                    : {}),
+                },
+              })),
+            }}
+          />
+        </section>
+      )}
+
+      <section aria-label="What to fix next" className="animate-enter space-y-3" style={{ ['--enter-delay' as string]: '120ms' }}>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          What to fix next
+        </h2>
+
+        {weakConcepts.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border px-6 py-10 text-center">
+            <p className="text-sm font-medium text-foreground">No weak concepts identified.</p>
+            <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
+              FRIDAY needs a little more evidence before it can point at something
+              meaningful. Keep studying.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-border bg-surface">
             <WeakConceptList
               goalId={goal.id}
               concepts={weakConcepts.map((w) => ({
@@ -148,106 +204,11 @@ export default async function ProgressPage() {
                 mastery: w.mastery,
                 examWeight: w.examWeight,
                 goalId: goal.id,
-                evidence: {
-                  evidenceCount: w.evidence.evidenceCount,
-                  beliefConfidence: w.evidence.beliefConfidence,
-                  lastEvidenceAt: w.evidence.lastEvidenceAt?.toISOString() ?? null,
-                  provisional: w.evidence.provisional,
-                },
               }))}
             />
-          </CardContent>
-        </Card>
-
-        {/*
-          Pace needs history to mean anything.
-
-          With one day of data a learner's measured pace is structurally 0% per
-          week, so this card greeted every new student with an orange badge
-          reading "behind the pace you need" — directly below a green "On track"
-          verdict on the same screen. Two contradictory judgements, one of them
-          punitive, both derived from a single data point that the card's own
-          footnote admitted was not a trend.
-
-          The gate below is the same `trends.length >= 2` the sparkline already
-          used. Until there is something real to say, the card says what is
-          actually true: come back tomorrow.
-        */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between gap-3">
-              <CardTitle>Pace</CardTitle>
-              {trends.length >= 2 ? (
-                <Badge variant={progress.velocity.trend === 'declining' ? 'warning' : 'success'}>
-                  {trendCopy}
-                </Badge>
-              ) : null}
-            </div>
-            <CardDescription>
-              Measured from your actual progress, not from the hours you planned at signup.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {trends.length >= 2 ? (
-              <>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <Stat
-                    label="Your pace"
-                    value={`${(progress.velocity.perWeek * 100).toFixed(1)}% / week`}
-                  />
-                  <Stat
-                    label="Needed"
-                    value={`${(progress.velocity.requiredPerWeek * 100).toFixed(1)}% / week`}
-                  />
-                </div>
-                <Sparkline points={trends.map((t) => t.weightedProgress)} />
-              </>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Study on another day and your pace shows up here. One day is not a trend, so FRIDAY
-                will not pretend to read one.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        )}
+      </section>
     </div>
-  );
-}
-
-function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div>
-      <div className="text-lg font-semibold tabular-nums">{value}</div>
-      <div className="text-xs text-muted-foreground">{label}</div>
-      {hint ? <div className="text-[11px] text-warning">{hint}</div> : null}
-    </div>
-  );
-}
-
-/** Inline SVG rather than a chart library — one series, no interaction, no axes. */
-function Sparkline({ points }: { points: number[] }) {
-  const width = 280;
-  const height = 48;
-  const max = Math.max(...points, 0.0001);
-  const step = points.length > 1 ? width / (points.length - 1) : width;
-
-  const d = points
-    .map(
-      (p, i) =>
-        `${i === 0 ? 'M' : 'L'} ${(i * step).toFixed(1)} ${(height - (p / max) * height).toFixed(1)}`,
-    )
-    .join(' ');
-
-  return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      className="h-12 w-full text-primary"
-      role="img"
-      aria-label="Weighted progress over the last 30 days"
-      preserveAspectRatio="none"
-    >
-      <path d={d} fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
-    </svg>
   );
 }

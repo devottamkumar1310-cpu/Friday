@@ -1,40 +1,29 @@
-import Link from 'next/link';
-import { MainNav } from '@/components/app/main-nav';
-import { SignOutButton } from '@/components/app/sign-out-button';
-import { ThemeToggle } from '@/components/app/theme-toggle';
+import { AppSidebar } from '@/components/app/app-sidebar';
+import { MobileNav } from '@/components/app/mobile-nav';
+import { CommandPalette } from '@/components/app/command-palette';
 import { requireUser } from '@/lib/auth/server';
+import { RevenueCatProvider } from '@/components/app/revenuecat-provider';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   // Middleware only checked that a cookie exists; this is the real validation.
   const user = await requireUser();
 
   return (
-    <div className="flex min-h-dvh flex-col">
-      <header className="relative border-b border-border">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          <div className="flex min-w-0 items-center gap-6">
-            <Link
-              href="/dashboard"
-              className="flex min-h-11 shrink-0 items-center rounded-md text-sm font-semibold tracking-tight focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-            >
-              FRIDAY
-            </Link>
-            <MainNav />
-          </div>
-
-          <div className="flex shrink-0 items-center gap-3">
-            <span className="hidden max-w-32 truncate text-sm text-muted-foreground md:inline">
-              {user.displayName}
-            </span>
-            <ThemeToggle />
-            <SignOutButton />
-          </div>
+    <RevenueCatProvider userId={user.id}>
+      <div className="flex min-h-dvh bg-background">
+        <AppSidebar userDisplayName={user.displayName} />
+        
+        <div className="flex flex-1 flex-col min-w-0">
+          <MobileNav userDisplayName={user.displayName} />
+          
+          <main id="main" className="flex-1 w-full max-w-5xl mx-auto px-4 py-8 md:px-8 lg:px-12">
+            {children}
+          </main>
         </div>
-      </header>
-
-      <main id="main" className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6 sm:py-8">
-        {children}
-      </main>
-    </div>
+      </div>
+      {/* Global command palette — Cmd/Ctrl+K from anywhere in the app */}
+      <CommandPalette />
+    </RevenueCatProvider>
   );
 }
+

@@ -63,26 +63,23 @@ export function MockTestStarter({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Full Mock Test</CardTitle>
+        <CardTitle>What this covers</CardTitle>
         <CardDescription>
-          A comprehensive assessment across your entire curriculum.
+          A comprehensive assessment across your entire curriculum. Nothing is skipped.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {error && (
-          <Callout tone="warning" title="Test generation failed">
-            {error}
+          <Callout tone="warning" title="FRIDAY couldn’t build your mock test">
+            {error} Your existing plan and progress are unaffected.
           </Callout>
         )}
 
-        <div className="rounded border bg-muted/20 p-4 space-y-2">
-          <p className="font-medium text-sm">Test Configuration</p>
-          <ul className="text-sm text-muted-foreground list-disc pl-4">
-            <li>Length: 15 questions</li>
-            <li>Scope: All curriculum concepts</li>
-            <li>Difficulty: Advanced (Level 4)</li>
-          </ul>
-        </div>
+        <ul className="space-y-1.5 rounded-md border border-border bg-surface-muted p-4 text-sm text-muted-foreground">
+          <li>Length: 15 questions</li>
+          <li>Scope: All curriculum concepts</li>
+          <li>Difficulty: Advanced (Level 4)</li>
+        </ul>
 
         <Button size="lg" className="w-full" onClick={start} disabled={busy || conceptIds.length === 0}>
           {busy ? (
