@@ -491,18 +491,12 @@ export default function LandingPage() {
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-5 py-6 sm:px-6">
           <span className="text-sm font-semibold tracking-tight">FRIDAY</span>
           <div className="flex items-center gap-4">
-            <a
-              href="#"
-              className="text-xs text-muted-foreground transition-colors hover:text-foreground"
-            >
+            <span className="text-xs text-muted-foreground">
               Privacy
-            </a>
-            <a
-              href="#"
-              className="text-xs text-muted-foreground transition-colors hover:text-foreground"
-            >
+            </span>
+            <span className="text-xs text-muted-foreground">
               Terms
-            </a>
+            </span>
             <p className="text-xs text-muted-foreground">
               AI Learning Operating System · Built for the exam grind
             </p>
